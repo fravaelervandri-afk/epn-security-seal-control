@@ -1845,9 +1845,27 @@ const ViewInputData = ({
         const html5QrCode = new Html5Qrcode("input-reader");
         inputScannerRef.current = html5QrCode;
 
+        // --- LOGIKA CERDAS PEMILIHAN KAMERA UTAMA (ANTI 0.5x) ---
+        let cameraConfig = { facingMode: "environment" };
+        try {
+            const cameras = await Html5Qrcode.getCameras();
+            if (cameras && cameras.length > 0) {
+                const backCams = cameras.filter(c => c.label.toLowerCase().includes('back') || c.label.toLowerCase().includes('belakang') || c.label.toLowerCase().includes('environment'));
+                if (backCams.length > 0) {
+                    let bestCam = backCams.find(c => !c.label.toLowerCase().includes('ultra') && !c.label.toLowerCase().includes('0.5') && !c.label.toLowerCase().includes('wide') && !c.label.toLowerCase().includes('macro'));
+                    if (!bestCam) bestCam = backCams[0]; 
+                    cameraConfig = { cameraId: bestCam.id };
+                } else {
+                    cameraConfig = { cameraId: cameras[cameras.length - 1].id };
+                }
+            }
+        } catch (camErr) {
+            console.warn("Gagal mengambil daftar spesifik kamera, menggunakan default.", camErr);
+        }
+
         await html5QrCode.start(
-          { facingMode: "environment" }, 
-          { fps: 10, qrbox: { width: 250, height: 250 } },
+          cameraConfig, 
+          { fps: 15, qrbox: { width: 250, height: 250 } },
           (decodedText) => {
             const result = decryptData(decodedText);
             
@@ -2614,18 +2632,44 @@ const ViewScanner = ({ installedSeals, showNotification }) => {
       try {
         const module = await import('https://esm.sh/html5-qrcode');
         const Html5Qrcode = module.Html5Qrcode;
+        
+        if (scannerRef.current) {
+          await scannerRef.current.stop().catch(() => {});
+          scannerRef.current.clear();
+        }
+        
         const html5QrCode = new Html5Qrcode("reader");
         scannerRef.current = html5QrCode;
+
+        // --- LOGIKA CERDAS PEMILIHAN KAMERA UTAMA (ANTI 0.5x) ---
+        let cameraConfig = { facingMode: "environment" };
+        try {
+            const cameras = await Html5Qrcode.getCameras();
+            if (cameras && cameras.length > 0) {
+                const backCams = cameras.filter(c => c.label.toLowerCase().includes('back') || c.label.toLowerCase().includes('belakang') || c.label.toLowerCase().includes('environment'));
+                if (backCams.length > 0) {
+                    let bestCam = backCams.find(c => !c.label.toLowerCase().includes('ultra') && !c.label.toLowerCase().includes('0.5') && !c.label.toLowerCase().includes('wide') && !c.label.toLowerCase().includes('macro'));
+                    if (!bestCam) bestCam = backCams[0]; 
+                    cameraConfig = { cameraId: bestCam.id };
+                } else {
+                    cameraConfig = { cameraId: cameras[cameras.length - 1].id };
+                }
+            }
+        } catch (camErr) {
+            console.warn("Gagal mengambil daftar spesifik kamera, menggunakan default.", camErr);
+        }
         
         await html5QrCode.start(
-          { facingMode: "environment" }, 
-          { fps: 10, qrbox: { width: 250, height: 250 } },
+          cameraConfig, 
+          { fps: 15, qrbox: { width: 250, height: 250 } }, // Tampilan memanjang otomatis menyesuaikan kontainer
           (decodedText) => { 
-              html5QrCode.stop().then(() => { 
-                  scannerRef.current = null; 
-                  setIsScanning(false); 
-                  processScannedData(decodedText); 
-              }); 
+              if(scannerRef.current) {
+                  scannerRef.current.stop().then(() => { 
+                      scannerRef.current = null; 
+                      setIsScanning(false); 
+                      processScannedData(decodedText); 
+                  }).catch(console.error); 
+              }
           }, 
           (errorMessage) => {}
         );
@@ -2633,12 +2677,12 @@ const ViewScanner = ({ installedSeals, showNotification }) => {
         showNotification("Gagal mengakses kamera. Pastikan browser dan perangkat Anda memberikan izin akses kamera.", 'error'); 
         setIsScanning(false); 
       }
-    }, 150);
+    }, 300); // Sedikit jeda agar transisi UI terlihat mulus
   };
 
   const stopScanner = async () => {
     if (scannerRef.current) { 
-        await scannerRef.current.stop(); 
+        await scannerRef.current.stop().catch(() => {}); 
         scannerRef.current.clear(); 
         scannerRef.current = null; 
     }
