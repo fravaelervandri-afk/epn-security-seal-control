@@ -767,7 +767,6 @@ const ViewQRGenerator = ({
       const previewWidthPx = templateContainer ? templateContainer.getBoundingClientRect().width : 800;
 
       // --- TAMBAHAN OPTIMASI PDF: PRE-FETCH & CACHING ---
-      // Agar tidak mengunduh dari internet berulang-ulang untuk salinan (copies)
       const uniqueIds = [...new Set(generatedQRs.map(item => item.id))];
       const qrImageCache = {};
 
@@ -776,7 +775,6 @@ const ViewQRGenerator = ({
         const batch = uniqueIds.slice(b, b + batchLimit);
         await Promise.all(batch.map(async (id) => {
            try {
-              // OPTIMASI: Resolusi diturunkan ke 300px (Sangat tajam untuk cetak, tapi file jauh lebih ringan)
               const dataUrl = await generateQROnCanvas(id, `${window.location.origin}/?verify=${id}`, 300, printConfig.embedQrText);
               qrImageCache[id] = dataUrl;
            } catch (e) {
@@ -816,7 +814,6 @@ const ViewQRGenerator = ({
         const x = startX + (col * (itemWidth + gapX));
         const y = startY + (row * (itemHeight + gapY));
 
-        // OPTIMASI: Tambahkan Alias 'TEMPLATE_BG' agar template hanya disimpan 1x di memori PDF
         pdf.addImage(templateImg, imgFormat, x, y, itemWidth, itemHeight, 'TEMPLATE_BG', 'FAST');
 
         if (printConfig.showOutline) {
@@ -825,7 +822,6 @@ const ViewQRGenerator = ({
            pdf.rect(x, y, itemWidth, itemHeight);
         }
 
-        // Terapkan Gambar QR dari Cache Lokal ke PDF
         const currentId = generatedQRs[i].id;
         const cachedQrImage = qrImageCache[currentId];
 
@@ -837,7 +833,6 @@ const ViewQRGenerator = ({
                  const qrMmX = x + (itemWidth * (pos.x / 100)) - (qrMmWidth / 2);
                  const qrMmY = y + (itemHeight * (pos.y / 100)) - (qrMmWidth / 2);
                  
-                 // OPTIMASI: Tambahkan Alias dinamis `QR_${currentId}` agar QR yang sama hanya direferensikan (tidak diduplikasi fisiknya)
                  pdf.addImage(cachedQrImage, 'PNG', qrMmX, qrMmY, qrMmWidth, qrMmWidth, `QR_${currentId}`, 'FAST');
              }
            } catch (err) {
@@ -1833,15 +1828,22 @@ const ViewInputData = ({
   const [dropdownSearch, setDropdownSearch] = useState('');
   
   const sealDropdownRef = useRef(null);
-  const inputScannerRef = useRef(null);
   const [scannerModal, setScannerModal] = useState({ isOpen: false, category: null, slot: null });
+
+  // Custom Scanner Refs (Sama dengan ViewScanner)
+  const videoRef = useRef(null);
+  const canvasRef = useRef(null);
+  const streamRef = useRef(null);
+  const animationRef = useRef(null);
+  const activeScanRef = useRef(false);
+
+  const [cameras, setCameras] = useState([]);
+  const [currentCamIndex, setCurrentCamIndex] = useState(0);
 
   // Cleanup scanner jika unmount
   useEffect(() => {
     return () => {
-      if (inputScannerRef.current) {
-        inputScannerRef.current.stop().catch(() => {});
-      }
+      stopInputScanner();
     };
   }, []);
 
@@ -1918,138 +1920,164 @@ const ViewInputData = ({
     });
   };
 
-  const startInputScanner = async (category, slot) => {
+  const startInputScanner = async (category, slot, forcedCamIndex = null) => {
+    if (activeScanRef.current && forcedCamIndex === null) return;
+    
     setScannerModal({ isOpen: true, category, slot });
+    activeScanRef.current = true;
 
     try {
-      // 1. Tunggu DOM siap sepenuhnya agar tidak error 'clientWidth'
-      await new Promise(resolve => {
-          let attempts = 0;
-          const check = () => {
-              const el = document.getElementById("input-reader");
-              if (el && el.clientWidth > 0) resolve();
-              else if (attempts < 50) { attempts++; requestAnimationFrame(check); }
-              else resolve();
-          };
-          check();
-      });
+      await new Promise(resolve => setTimeout(resolve, 300));
+      if (!activeScanRef.current) return;
 
-      const module = await import('https://esm.sh/html5-qrcode');
-      const Html5Qrcode = module.Html5Qrcode;
+      const jsQRModule = await import('https://esm.sh/jsqr');
+      const jsQR = jsQRModule.default || jsQRModule;
 
-      if (inputScannerRef.current) {
-        await inputScannerRef.current.stop().catch(() => {});
-        inputScannerRef.current.clear();
+      if (streamRef.current) {
+          streamRef.current.getTracks().forEach(track => track.stop());
+      }
+      if (animationRef.current) {
+          cancelAnimationFrame(animationRef.current);
       }
 
-      const html5QrCode = new Html5Qrcode("input-reader");
-      inputScannerRef.current = html5QrCode;
+      let targetList = cameras;
+      if (targetList.length === 0) {
+          try {
+              const tempStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+              tempStream.getTracks().forEach(t => t.stop());
+          } catch(e) {}
 
-      const onSuccess = (decodedText) => {
-        const scannedId = extractSealId(decodedText).trim();
-        
-        const currentType = slot === 1 ? sealInputs[category].type : sealInputs[category].type2;
-        let isAlreadyScanned = false;
-        
-        Object.keys(sealInputs).forEach(k => {
-           if (!sealInputs[k].isNone) {
-             if (sealInputs[k].id === scannedId && sealInputs[k].type === currentType) {
-               isAlreadyScanned = true;
-             }
-             if (sealInputs[k].isDouble && sealInputs[k].id2 === scannedId && sealInputs[k].type2 === currentType) {
-               isAlreadyScanned = true;
-             }
-           }
-        });
-        
-        const isUsedInDB = installedSeals.some(seal => seal.sealId === scannedId && seal.seal_type === currentType);
-        
-        if (isAlreadyScanned || isUsedInDB) {
-           showNotification(`Peringatan: ID ini sudah terpakai sebagai ${currentType}!`, 'error');
-           return;
-        }
+          const devices = await navigator.mediaDevices.enumerateDevices();
+          const videoDevices = devices.filter(d => d.kind === 'videoinput');
+          const backCams = videoDevices.filter(c => {
+              const lbl = c.label.toLowerCase();
+              return lbl.includes('back') || lbl.includes('belakang') || lbl.includes('environment');
+          });
+          targetList = backCams.length > 0 ? backCams : videoDevices;
+          setCameras(targetList);
+      }
 
-        html5QrCode.stop().then(() => {
-          inputScannerRef.current = null;
-          setScannerModal({ isOpen: false, category: null, slot: null });
-          updateSealInput(category, slot === 1 ? 'id' : 'id2', scannedId);
-        }).catch(console.error);
+      let camIndexToUse = 0;
+      if (forcedCamIndex !== null) {
+          camIndexToUse = forcedCamIndex;
+      } else if (targetList.length > 0) {
+          const bestIdx = targetList.findIndex(c => {
+              const lbl = c.label.toLowerCase();
+              if (lbl.includes('main') || lbl.includes('1x') || lbl.includes('standard') || lbl.includes('utama')) return true;
+              return !lbl.includes('ultra') && !lbl.includes('0.5') && !lbl.includes('wide') && !lbl.includes('macro') && !lbl.includes('tele') && !lbl.includes('depth');
+          });
+          camIndexToUse = bestIdx !== -1 ? bestIdx : 0;
+      }
+
+      setCurrentCamIndex(camIndexToUse);
+
+      const constraints = {
+          video: targetList.length > 0 && targetList[camIndexToUse].deviceId 
+              ? { deviceId: { exact: targetList[camIndexToUse].deviceId }, width: { ideal: 1280 } } 
+              : { facingMode: "environment", width: { ideal: 1280 } }
       };
 
-      const onError = (err) => {};
-      
-      // KEMBALI KE PENGATURAN AMAN: Menghapus fitur eksperimental yang memblokir kamera
-      const qrConfig = { 
-          fps: 15, 
-          qrbox: { width: 250, height: 250 }
-      };
-      
-      let started = false;
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      streamRef.current = stream;
 
-      // 2. Logika Cerdas Pemilihan Kamera (Filter Nama Lensa, Tanpa Constraint Zoom)
-      try {
-          const cameras = await Html5Qrcode.getCameras();
-          if (cameras && cameras.length > 0) {
-              const backCams = cameras.filter(c => {
-                  const lbl = c.label.toLowerCase();
-                  return lbl.includes('back') || lbl.includes('belakang') || lbl.includes('environment');
-              });
+      if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.setAttribute("playsinline", true);
+          videoRef.current.play();
+
+          const scanLoop = () => {
+              if (!activeScanRef.current) return;
               
-              let bestCam = null;
-              if (backCams.length > 0) {
-                  // Prioritas 1: Cari kamera yang secara eksplisit bernama 'main', '1x', 'standard'
-                  bestCam = backCams.find(c => {
-                      const lbl = c.label.toLowerCase();
-                      return lbl.includes('main') || lbl.includes('1x') || lbl.includes('standard') || lbl.includes('utama');
+              if (videoRef.current && videoRef.current.readyState === videoRef.current.HAVE_ENOUGH_DATA) {
+                  const canvas = canvasRef.current;
+                  if (!canvas) return;
+                  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+                  
+                  canvas.width = 400; 
+                  canvas.height = 400;
+                  
+                  const vw = videoRef.current.videoWidth;
+                  const vh = videoRef.current.videoHeight;
+                  
+                  const size = Math.min(vw, vh);
+                  const zoomFactor = 1.5; 
+                  const cropSize = size / zoomFactor; 
+                  const sx = (vw - cropSize) / 2;
+                  const sy = (vh - cropSize) / 2;
+                  
+                  ctx.filter = 'contrast(1.4) brightness(1.2)';
+                  ctx.drawImage(videoRef.current, sx, sy, cropSize, cropSize, 0, 0, canvas.width, canvas.height);
+                  ctx.filter = 'none';
+
+                  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                  const code = jsQR(imageData.data, imageData.width, imageData.height, {
+                      inversionAttempts: "dontInvert",
                   });
 
-                  // Prioritas 2: Buang semua lensa aneh (ultra, wide, macro, tele, depth)
-                  if (!bestCam) {
-                      const normalCams = backCams.filter(c => {
-                          const lbl = c.label.toLowerCase();
-                          return !lbl.includes('ultra') && !lbl.includes('0.5') && !lbl.includes('wide') && !lbl.includes('macro') && !lbl.includes('tele') && !lbl.includes('depth');
-                      });
-                      bestCam = normalCams.length > 0 ? normalCams[0] : backCams[0];
+                  if (code && code.data) {
+                      const scannedId = extractSealId(code.data).trim();
+                      handleSuccessfulScan(scannedId, category, slot);
+                      return;
                   }
-              } else {
-                  bestCam = cameras[0];
               }
-
-              if (bestCam) {
-                  // PERBAIKAN: Paksa kamera yang terpilih untuk menyala dalam resolusi HD (1280p)
-                  await html5QrCode.start({ deviceId: { exact: bestCam.id }, width: { ideal: 1280 } }, qrConfig, onSuccess, onError);
-                  started = true;
-              }
-          }
-      } catch (camErr) {
-          console.warn("Gagal deteksi kamera cerdas:", camErr);
-      }
-
-      if (!started) {
-          try {
-              await html5QrCode.start({ facingMode: "environment", width: { ideal: 1280 } }, qrConfig, onSuccess, onError);
-              started = true;
-          } catch (err2) {
-              console.warn("Gagal fallback resolusi:", err2);
-          }
-      }
-
-      if (!started) {
-          await html5QrCode.start({ facingMode: "environment" }, qrConfig, onSuccess, onError);
+              animationRef.current = requestAnimationFrame(scanLoop);
+          };
+          animationRef.current = requestAnimationFrame(scanLoop);
       }
 
     } catch (err) {
-      console.error(err);
-      showNotification("Gagal mengakses kamera. Pastikan izin kamera diberikan.", 'error');
-      setScannerModal({ isOpen: false, category: null, slot: null });
+      if (activeScanRef.current) {
+          showNotification("Gagal mengakses kamera. Pastikan izin kamera diberikan.", 'error');
+          stopInputScanner();
+      }
     }
   };
 
-  const stopInputScanner = async () => {
-    if (inputScannerRef.current) {
-      await inputScannerRef.current.stop().catch(console.error);
-      inputScannerRef.current.clear(); 
-      inputScannerRef.current = null;
+  const handleSuccessfulScan = (scannedId, category, slot) => {
+      const currentType = slot === 1 ? sealInputs[category].type : sealInputs[category].type2;
+      let isAlreadyScanned = false;
+      
+      Object.keys(sealInputs).forEach(k => {
+         if (!sealInputs[k].isNone) {
+           if (sealInputs[k].id === scannedId && sealInputs[k].type === currentType) {
+             isAlreadyScanned = true;
+           }
+           if (sealInputs[k].isDouble && sealInputs[k].id2 === scannedId && sealInputs[k].type2 === currentType) {
+             isAlreadyScanned = true;
+           }
+         }
+      });
+      
+      const isUsedInDB = installedSeals.some(seal => seal.sealId === scannedId && seal.seal_type === currentType);
+      
+      if (isAlreadyScanned || isUsedInDB) {
+         showNotification(`Peringatan: ID ini sudah terpakai sebagai ${currentType}!`, 'error');
+         stopInputScanner();
+         return;
+      }
+
+      stopInputScanner();
+      updateSealInput(category, slot === 1 ? 'id' : 'id2', scannedId);
+  };
+
+  const switchCameraInput = async () => {
+    if (cameras.length <= 1) return;
+    const nextIdx = (currentCamIndex + 1) % cameras.length;
+    startInputScanner(scannerModal.category, scannerModal.slot, nextIdx);
+  };
+
+  const stopInputScanner = () => {
+    activeScanRef.current = false;
+    if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current);
+        animationRef.current = null;
+    }
+    if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+        streamRef.current = null;
+    }
+    if (videoRef.current) {
+        videoRef.current.srcObject = null;
     }
     setScannerModal({ isOpen: false, category: null, slot: null });
   };
@@ -2458,6 +2486,7 @@ const ViewInputData = ({
                  </div>
               </div>
               <button 
+                type="button"
                 onClick={stopInputScanner} 
                 className="p-2 bg-gray-800 rounded-full hover:bg-red-500 transition-colors"
               >
@@ -2466,11 +2495,27 @@ const ViewInputData = ({
            </div>
            <div className="flex-1 flex flex-col justify-center items-center bg-black relative p-4">
                <div className="absolute inset-0 border-4 border-blue-500 opacity-20 pointer-events-none m-4 rounded-3xl"></div>
-               <div 
-                 id="input-reader" 
-                 className="w-full max-w-md aspect-square bg-gray-900 rounded-2xl overflow-hidden shadow-[0_0_50px_rgba(0,0,0,0.5)]"
-               ></div>
+               
+               <div className="w-full max-w-md aspect-square bg-gray-900 rounded-2xl overflow-hidden shadow-[0_0_50px_rgba(0,0,0,0.5)] relative">
+                  <video ref={videoRef} className="hidden" playsInline muted />
+                  <canvas ref={canvasRef} className="w-full h-full object-cover scale-[1.02]" />
+                  
+                  {/* Panduan Area Scan */}
+                  <div className="absolute inset-0 border-2 border-blue-500/40 m-10 rounded-xl pointer-events-none"></div>
+                  <div className="absolute top-1/2 left-10 right-10 h-0.5 bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.8)] pointer-events-none" style={{animation: 'scan-animation 2s ease-in-out infinite'}}></div>
+               </div>
+
                <p className="text-white text-sm font-semibold mt-8 animate-pulse text-center">Sedang memindai...</p>
+
+               {cameras.length > 1 && (
+                 <button 
+                   type="button"
+                   onClick={switchCameraInput}
+                   className="mt-8 bg-gray-800/80 backdrop-blur-md border border-gray-600 text-white px-6 py-3 rounded-full font-bold tracking-wider hover:bg-gray-700 transition-colors flex items-center gap-2 z-10"
+                 >
+                   <SwitchCamera size={18} /> Ganti Lensa ({currentCamIndex + 1}/{cameras.length})
+                 </button>
+               )}
            </div>
         </div>
       )}
@@ -2883,6 +2928,7 @@ const ViewScanner = ({ installedSeals, showNotification }) => {
         }
 
     } catch (err) { 
+      console.error("Scanner Error:", err);
       if (activeScanRef.current) {
           showNotification("Gagal mengakses kamera. Pastikan izin akses diberikan.", 'error'); 
           setIsScanning(false); 
@@ -2899,10 +2945,19 @@ const ViewScanner = ({ installedSeals, showNotification }) => {
 
   const stopScanner = () => {
     activeScanRef.current = false;
-    if (animationRef.current) cancelAnimationFrame(animationRef.current);
+    if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current);
+        animationRef.current = null;
+    }
     if (streamRef.current) {
-        streamRef.current.getTracks().forEach(track => track.stop());
+        streamRef.current.getTracks().forEach(track => {
+            track.stop();
+        });
         streamRef.current = null;
+    }
+    // PERBAIKAN PENTING: Release video element object
+    if (videoRef.current) {
+        videoRef.current.srcObject = null;
     }
     setIsScanning(false);
   };
@@ -2988,7 +3043,7 @@ const ViewScanner = ({ installedSeals, showNotification }) => {
                <Camera size={48} className="text-gray-600" strokeWidth={1.5} />
              </div>
              <button 
-               onClick={startScanner} 
+               onClick={() => startScanner()} 
                className="absolute bottom-6 bg-[#146b99] hover:bg-[#11577c] px-6 py-3 rounded-full border border-blue-400 text-white font-bold tracking-wider shadow-lg transition-all flex items-center gap-2 z-10"
              >
                 <ScanLine size={18} /> BUKA KAMERA SEKARANG
@@ -3048,7 +3103,7 @@ const ViewScanner = ({ installedSeals, showNotification }) => {
 
             <div className="mt-8 pt-6 border-t border-slate-100 flex justify-center">
                <button 
-                 onClick={startScanner} 
+                 onClick={() => startScanner()} 
                  className="bg-[#146b99] text-white px-8 py-3 rounded-xl font-bold hover:bg-[#11577c] transition-colors shadow-md flex items-center gap-2"
                >
                  <ScanLine size={18} /> Scan QR Lainnya
