@@ -538,6 +538,9 @@ const ViewQRGenerator = ({
     const newItems = [];
     const duplicates = [];
     
+    // PERBAIKAN: Menambahkan kembali definisi variabel uniqueGeneratedIds yang sempat hilang
+    const uniqueGeneratedIds = [...new Set(generateHistory.flatMap(batch => (batch.items || []).map(item => item?.id).filter(Boolean)))];
+    
     for (let i = 0; i < count; i++) {
       const id = `${inputPrefix}${(startNum + i).toString().padStart(5, '0')}`;
       if (uniqueGeneratedIds.includes(id)) {
