@@ -2663,7 +2663,7 @@ const ViewScanner = ({ installedSeals, showNotification }) => {
         
         <h2 className="text-2xl font-extrabold text-gray-800 mb-3 text-center">Verifikasi Keaslian Segel</h2>
         <p className="text-gray-500 text-sm font-medium text-center mb-8 max-w-md">
-          Gunakan kamera untuk memindai kode QR Secure V1. Sistem otomatis memvalidasi data terenkripsi.
+          Gunakan kamera untuk memindai kode EPN Security Seal QR.
         </p>
 
         {isScanning ? (
