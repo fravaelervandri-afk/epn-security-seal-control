@@ -538,7 +538,6 @@ const ViewQRGenerator = ({
     const newItems = [];
     const duplicates = [];
     
-    // PERBAIKAN: Menambahkan kembali definisi variabel uniqueGeneratedIds yang sempat hilang
     const uniqueGeneratedIds = [...new Set(generateHistory.flatMap(batch => (batch.items || []).map(item => item?.id).filter(Boolean)))];
     
     for (let i = 0; i < count; i++) {
@@ -1838,75 +1837,113 @@ const ViewInputData = ({
 
   const startInputScanner = async (category, slot) => {
     setScannerModal({ isOpen: true, category, slot });
-    setTimeout(async () => {
-      try {
-        const module = await import('https://esm.sh/html5-qrcode');
-        const Html5Qrcode = module.Html5Qrcode;
-        const html5QrCode = new Html5Qrcode("input-reader");
-        inputScannerRef.current = html5QrCode;
 
-        // --- LOGIKA CERDAS PEMILIHAN KAMERA UTAMA (ANTI 0.5x) ---
-        let cameraConfig = { facingMode: "environment" };
-        try {
-            const cameras = await Html5Qrcode.getCameras();
-            if (cameras && cameras.length > 0) {
-                const backCams = cameras.filter(c => c.label.toLowerCase().includes('back') || c.label.toLowerCase().includes('belakang') || c.label.toLowerCase().includes('environment'));
-                if (backCams.length > 0) {
-                    let bestCam = backCams.find(c => !c.label.toLowerCase().includes('ultra') && !c.label.toLowerCase().includes('0.5') && !c.label.toLowerCase().includes('wide') && !c.label.toLowerCase().includes('macro'));
-                    if (!bestCam) bestCam = backCams[0]; 
-                    cameraConfig = { cameraId: bestCam.id };
-                } else {
-                    cameraConfig = { cameraId: cameras[cameras.length - 1].id };
-                }
-            }
-        } catch (camErr) {
-            console.warn("Gagal mengambil daftar spesifik kamera, menggunakan default.", camErr);
-        }
+    try {
+      // 1. Tunggu DOM siap sepenuhnya agar tidak error 'clientWidth'
+      await new Promise(resolve => {
+          let attempts = 0;
+          const check = () => {
+              const el = document.getElementById("input-reader");
+              if (el && el.clientWidth > 0) resolve();
+              else if (attempts < 50) { attempts++; requestAnimationFrame(check); }
+              else resolve();
+          };
+          check();
+      });
 
-        await html5QrCode.start(
-          cameraConfig, 
-          { fps: 15, qrbox: { width: 250, height: 250 } },
-          (decodedText) => {
-            const result = decryptData(decodedText);
-            
-            if (result.success) {
-              const currentType = slot === 1 ? sealInputs[category].type : sealInputs[category].type2;
-              let isAlreadyScanned = false;
-              
-              Object.keys(sealInputs).forEach(k => {
-                 if (!sealInputs[k].isNone) {
-                   if (sealInputs[k].id === result.data && sealInputs[k].type === currentType) {
-                     isAlreadyScanned = true;
-                   }
-                   if (sealInputs[k].isDouble && sealInputs[k].id2 === result.data && sealInputs[k].type2 === currentType) {
-                     isAlreadyScanned = true;
-                   }
-                 }
-              });
-              
-              const isUsedInDB = installedSeals.some(seal => seal.sealId === result.data && seal.seal_type === currentType);
-              
-              if (isAlreadyScanned || isUsedInDB) {
-                 showNotification(`Peringatan: ID ini sudah terpakai sebagai ${currentType}!`, 'error');
-                 return;
-              }
+      const module = await import('https://esm.sh/html5-qrcode');
+      const Html5Qrcode = module.Html5Qrcode;
 
-              html5QrCode.stop().then(() => {
-                inputScannerRef.current = null;
-                setScannerModal({ isOpen: false, category: null, slot: null });
-                updateSealInput(category, slot === 1 ? 'id' : 'id2', result.data);
-              }).catch(console.error);
-            } else {
-              showNotification("QR Code tidak dikenali oleh sistem EPN.", 'error');
-            }
-          },
-          (err) => {}
-        );
-      } catch (err) {
-        showNotification("Gagal mengakses kamera.", 'error'); 
-        setScannerModal({ isOpen: false, category: null, slot: null });
+      if (inputScannerRef.current) {
+        await inputScannerRef.current.stop().catch(() => {});
+        inputScannerRef.current.clear();
       }
-    }, 150);
+
+      const html5QrCode = new Html5Qrcode("input-reader");
+      inputScannerRef.current = html5QrCode;
+
+      const onSuccess = (decodedText) => {
+        const result = decryptData(decodedText);
+        
+        if (result.success) {
+          const currentType = slot === 1 ? sealInputs[category].type : sealInputs[category].type2;
+          let isAlreadyScanned = false;
+          
+          Object.keys(sealInputs).forEach(k => {
+             if (!sealInputs[k].isNone) {
+               if (sealInputs[k].id === result.data && sealInputs[k].type === currentType) {
+                 isAlreadyScanned = true;
+               }
+               if (sealInputs[k].isDouble && sealInputs[k].id2 === result.data && sealInputs[k].type2 === currentType) {
+                 isAlreadyScanned = true;
+               }
+             }
+          });
+          
+          const isUsedInDB = installedSeals.some(seal => seal.sealId === result.data && seal.seal_type === currentType);
+          
+          if (isAlreadyScanned || isUsedInDB) {
+             showNotification(`Peringatan: ID ini sudah terpakai sebagai ${currentType}!`, 'error');
+             return;
+          }
+
+          html5QrCode.stop().then(() => {
+            inputScannerRef.current = null;
+            setScannerModal({ isOpen: false, category: null, slot: null });
+            updateSealInput(category, slot === 1 ? 'id' : 'id2', result.data);
+          }).catch(console.error);
+        } else {
+          showNotification("QR Code tidak dikenali oleh sistem EPN.", 'error');
+        }
+      };
+
+      const onError = (err) => {};
+      const qrConfig = { fps: 15, qrbox: { width: 250, height: 250 } };
+      let started = false;
+
+      // 2. Logika Cerdas Pemilihan Kamera (Perbaikan Format Config)
+      try {
+          const cameras = await Html5Qrcode.getCameras();
+          if (cameras && cameras.length > 0) {
+              const backCams = cameras.filter(c => {
+                  const lbl = c.label.toLowerCase();
+                  return lbl.includes('back') || lbl.includes('belakang') || lbl.includes('environment');
+              });
+              const targetList = backCams.length > 0 ? backCams : cameras;
+              let bestCam = targetList.find(c => {
+                  const lbl = c.label.toLowerCase();
+                  return !lbl.includes('ultra') && !lbl.includes('0.5') && !lbl.includes('wide') && !lbl.includes('macro');
+              });
+              if (!bestCam) bestCam = targetList[0];
+
+              if (bestCam) {
+                  // WAJIB: ID Kamera sebagai string, bukan object
+                  await html5QrCode.start(bestCam.id, qrConfig, onSuccess, onError);
+                  started = true;
+              }
+          }
+      } catch (camErr) {
+          console.warn("Gagal deteksi kamera cerdas:", camErr);
+      }
+
+      if (!started) {
+          try {
+              await html5QrCode.start({ facingMode: "environment", width: { ideal: 1280 } }, qrConfig, onSuccess, onError);
+              started = true;
+          } catch (err2) {
+              console.warn("Gagal fallback resolusi:", err2);
+          }
+      }
+
+      if (!started) {
+          await html5QrCode.start({ facingMode: "environment" }, { fps: 10, qrbox: { width: 250, height: 250 } }, onSuccess, onError);
+      }
+
+    } catch (err) {
+      console.error(err);
+      showNotification("Gagal mengakses kamera. Pastikan izin kamera diberikan.", 'error');
+      setScannerModal({ isOpen: false, category: null, slot: null });
+    }
   };
 
   const stopInputScanner = async () => {
@@ -2616,6 +2653,7 @@ const ViewScanner = ({ installedSeals, showNotification }) => {
   const [scanResult, setScanResult] = useState(null);
   const [isScanning, setIsScanning] = useState(false);
   const scannerRef = useRef(null);
+  const activeScanRef = useRef(false);
 
   const processScannedData = (rawText) => { 
       setScanResult({ 
@@ -2625,11 +2663,27 @@ const ViewScanner = ({ installedSeals, showNotification }) => {
   };
 
   const startScanner = async () => {
+    if (activeScanRef.current) return;
+    activeScanRef.current = true;
+    
     setScanResult(null); 
     setIsScanning(true);
     
-    setTimeout(async () => {
-      try {
+    try {
+        // 1. Tunggu DOM siap sepenuhnya agar tidak error 'clientWidth'
+        await new Promise(resolve => {
+            let attempts = 0;
+            const check = () => {
+                const el = document.getElementById("reader");
+                if (el && el.clientWidth > 0) resolve();
+                else if (attempts < 50) { attempts++; requestAnimationFrame(check); }
+                else resolve();
+            };
+            check();
+        });
+
+        if (!activeScanRef.current) return;
+
         const module = await import('https://esm.sh/html5-qrcode');
         const Html5Qrcode = module.Html5Qrcode;
         
@@ -2641,46 +2695,68 @@ const ViewScanner = ({ installedSeals, showNotification }) => {
         const html5QrCode = new Html5Qrcode("reader");
         scannerRef.current = html5QrCode;
 
-        // --- LOGIKA CERDAS PEMILIHAN KAMERA UTAMA (ANTI 0.5x) ---
-        let cameraConfig = { facingMode: "environment" };
+        const onSuccess = (decodedText) => { 
+            if(scannerRef.current) {
+                scannerRef.current.stop().then(() => { 
+                    scannerRef.current = null; 
+                    setIsScanning(false); 
+                    activeScanRef.current = false;
+                    processScannedData(decodedText); 
+                }).catch(console.error); 
+            }
+        };
+        const onError = (errorMessage) => {};
+        const qrConfig = { fps: 15, qrbox: { width: 250, height: 250 } };
+        let started = false;
+
+        // 2. Logika Cerdas Pemilihan Kamera (Perbaikan Format Config)
         try {
             const cameras = await Html5Qrcode.getCameras();
             if (cameras && cameras.length > 0) {
-                const backCams = cameras.filter(c => c.label.toLowerCase().includes('back') || c.label.toLowerCase().includes('belakang') || c.label.toLowerCase().includes('environment'));
-                if (backCams.length > 0) {
-                    let bestCam = backCams.find(c => !c.label.toLowerCase().includes('ultra') && !c.label.toLowerCase().includes('0.5') && !c.label.toLowerCase().includes('wide') && !c.label.toLowerCase().includes('macro'));
-                    if (!bestCam) bestCam = backCams[0]; 
-                    cameraConfig = { cameraId: bestCam.id };
-                } else {
-                    cameraConfig = { cameraId: cameras[cameras.length - 1].id };
+                const backCams = cameras.filter(c => {
+                    const lbl = c.label.toLowerCase();
+                    return lbl.includes('back') || lbl.includes('belakang') || lbl.includes('environment');
+                });
+                const targetList = backCams.length > 0 ? backCams : cameras;
+                let bestCam = targetList.find(c => {
+                    const lbl = c.label.toLowerCase();
+                    return !lbl.includes('ultra') && !lbl.includes('0.5') && !lbl.includes('wide') && !lbl.includes('macro');
+                });
+                if (!bestCam) bestCam = targetList[0]; 
+
+                if (bestCam) {
+                    // WAJIB: ID Kamera sebagai string, bukan object
+                    await html5QrCode.start(bestCam.id, qrConfig, onSuccess, onError);
+                    started = true;
                 }
             }
         } catch (camErr) {
-            console.warn("Gagal mengambil daftar spesifik kamera, menggunakan default.", camErr);
+            console.warn("Gagal mengambil daftar spesifik kamera:", camErr);
         }
         
-        await html5QrCode.start(
-          cameraConfig, 
-          { fps: 15, qrbox: { width: 250, height: 250 } }, // Tampilan memanjang otomatis menyesuaikan kontainer
-          (decodedText) => { 
-              if(scannerRef.current) {
-                  scannerRef.current.stop().then(() => { 
-                      scannerRef.current = null; 
-                      setIsScanning(false); 
-                      processScannedData(decodedText); 
-                  }).catch(console.error); 
-              }
-          }, 
-          (errorMessage) => {}
-        );
-      } catch (err) { 
-        showNotification("Gagal mengakses kamera. Pastikan browser dan perangkat Anda memberikan izin akses kamera.", 'error'); 
-        setIsScanning(false); 
+        if (!started && activeScanRef.current) {
+            try {
+                await html5QrCode.start({ facingMode: "environment", width: { ideal: 1280 } }, qrConfig, onSuccess, onError);
+                started = true;
+            } catch (err2) {
+                console.warn("Gagal fallback resolusi 1:", err2);
+            }
+        }
+
+        if (!started && activeScanRef.current) {
+            await html5QrCode.start({ facingMode: "environment" }, { fps: 10, qrbox: { width: 250, height: 250 } }, onSuccess, onError);
+        }
+    } catch (err) { 
+      if (activeScanRef.current) {
+          showNotification("Gagal mengakses kamera. Pastikan izin akses diberikan.", 'error'); 
+          setIsScanning(false); 
+          activeScanRef.current = false;
       }
-    }, 300); // Sedikit jeda agar transisi UI terlihat mulus
+    }
   };
 
   const stopScanner = async () => {
+    activeScanRef.current = false;
     if (scannerRef.current) { 
         await scannerRef.current.stop().catch(() => {}); 
         scannerRef.current.clear(); 
@@ -2813,12 +2889,22 @@ const ViewScanner = ({ installedSeals, showNotification }) => {
                  </div>
               </div>
             )}
+
+            <div className="mt-8 pt-6 border-t border-slate-100 flex justify-center">
+               <button 
+                 onClick={startScanner} 
+                 className="bg-[#146b99] text-white px-8 py-3 rounded-xl font-bold hover:bg-[#11577c] transition-colors shadow-md flex items-center gap-2"
+               >
+                 <ScanLine size={18} /> Scan QR Lainnya
+               </button>
+            </div>
           </div>
         )}
       </div>
     </>
   );
 };
+
 
 // ============================================================================
 // KOMPONEN APP (PENGHUBUNG SEMUA HALAMAN)
