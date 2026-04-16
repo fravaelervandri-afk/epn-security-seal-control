@@ -63,21 +63,6 @@ if (typeof document !== 'undefined' && !document.getElementById('nunito-font-sty
 // --- BAGIAN 0: KONFIGURASI GOOGLE APPS SCRIPT ---
 const GOOGLE_APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyaA8vZPHL_nD9poI4Afqb_NfGMayq80dBgqtANoAaZ7zw2BueodaugYSNRdpRN75R8/exec"; 
 
-// --- BAGIAN 1: SISTEM KEAMANAN (ENKRIPSI/DEKRIPSI) ---
-const SECRET_PREFIX = "SEAL_APP_SECURE::";
-const encryptData = (plainText) => btoa(`${SECRET_PREFIX}${plainText}`);
-const decryptData = (encryptedText) => {
-  try {
-    const decoded = atob(encryptedText);
-    if (decoded.startsWith(SECRET_PREFIX)) {
-      return { success: true, data: decoded.replace(SECRET_PREFIX, "") };
-    }
-    return { success: false, error: "Bukan QR Code dari sistem kami." };
-  } catch (e) {
-    return { success: false, error: "Format QR Code tidak valid." };
-  }
-};
-
 // --- BAGIAN 2: KOMPONEN CUSTOM QR CODE (API SERVER ONLINE) ---
 const CustomQRCodeWithID = ({ displayValue, qrPayload, size = 200, showText = false }) => {
   const canvasRef = useRef(null);
@@ -695,7 +680,7 @@ const ViewQRGenerator = ({
         await Promise.all(batch.map(async (id) => {
            try {
               // OPTIMASI: Resolusi diturunkan ke 300px (Sangat tajam untuk cetak, tapi file jauh lebih ringan)
-              const dataUrl = await generateQROnCanvas(id, encryptData(id), 300, printConfig.embedQrText);
+              const dataUrl = await generateQROnCanvas(id, id, 300, printConfig.embedQrText);
               qrImageCache[id] = dataUrl;
            } catch (e) {
               console.error(`Gagal fetch QR untuk ${id}`, e);
@@ -1361,7 +1346,7 @@ const ViewQRGenerator = ({
                   >
                      <CustomQRCodeWithID 
                        displayValue={`${inputPrefix}XXXXX`} 
-                       qrPayload={encryptData(`${inputPrefix}XXXXX`)} 
+                       qrPayload={`${inputPrefix}XXXXX`} 
                        size={300} 
                        showText={printConfig.embedQrText} 
                      />
@@ -1514,7 +1499,7 @@ const ViewQRGenerator = ({
                          >
                             <CustomQRCodeWithID 
                               displayValue={item.id} 
-                              qrPayload={encryptData(item.id)} 
+                              qrPayload={item.id} 
                               size={250} 
                               showText={printConfig.embedQrText} 
                             />
@@ -1864,50 +1849,42 @@ const ViewInputData = ({
       inputScannerRef.current = html5QrCode;
 
       const onSuccess = (decodedText) => {
-        const result = decryptData(decodedText);
+        const scannedId = decodedText.trim();
         
-        if (result.success) {
-          const currentType = slot === 1 ? sealInputs[category].type : sealInputs[category].type2;
-          let isAlreadyScanned = false;
-          
-          Object.keys(sealInputs).forEach(k => {
-             if (!sealInputs[k].isNone) {
-               if (sealInputs[k].id === result.data && sealInputs[k].type === currentType) {
-                 isAlreadyScanned = true;
-               }
-               if (sealInputs[k].isDouble && sealInputs[k].id2 === result.data && sealInputs[k].type2 === currentType) {
-                 isAlreadyScanned = true;
-               }
+        const currentType = slot === 1 ? sealInputs[category].type : sealInputs[category].type2;
+        let isAlreadyScanned = false;
+        
+        Object.keys(sealInputs).forEach(k => {
+           if (!sealInputs[k].isNone) {
+             if (sealInputs[k].id === scannedId && sealInputs[k].type === currentType) {
+               isAlreadyScanned = true;
              }
-          });
-          
-          const isUsedInDB = installedSeals.some(seal => seal.sealId === result.data && seal.seal_type === currentType);
-          
-          if (isAlreadyScanned || isUsedInDB) {
-             showNotification(`Peringatan: ID ini sudah terpakai sebagai ${currentType}!`, 'error');
-             return;
-          }
-
-          html5QrCode.stop().then(() => {
-            inputScannerRef.current = null;
-            setScannerModal({ isOpen: false, category: null, slot: null });
-            updateSealInput(category, slot === 1 ? 'id' : 'id2', result.data);
-          }).catch(console.error);
-        } else {
-          showNotification("QR Code tidak dikenali oleh sistem EPN.", 'error');
+             if (sealInputs[k].isDouble && sealInputs[k].id2 === scannedId && sealInputs[k].type2 === currentType) {
+               isAlreadyScanned = true;
+             }
+           }
+        });
+        
+        const isUsedInDB = installedSeals.some(seal => seal.sealId === scannedId && seal.seal_type === currentType);
+        
+        if (isAlreadyScanned || isUsedInDB) {
+           showNotification(`Peringatan: ID ini sudah terpakai sebagai ${currentType}!`, 'error');
+           return;
         }
+
+        html5QrCode.stop().then(() => {
+          inputScannerRef.current = null;
+          setScannerModal({ isOpen: false, category: null, slot: null });
+          updateSealInput(category, slot === 1 ? 'id' : 'id2', scannedId);
+        }).catch(console.error);
       };
 
       const onError = (err) => {};
       
-      // PERBAIKAN: Konfigurasi Scanner yang dioptimalkan dengan Native Hardware API
+      // KEMBALI KE PENGATURAN AMAN: Menghapus fitur eksperimental yang memblokir kamera
       const qrConfig = { 
           fps: 15, 
-          qrbox: { width: 280, height: 280 }, // Diperbesar sedikit agar fokus HP bisa mundur (tidak blur)
-          disableFlip: false, // Membantu membaca QR dari berbagai posisi
-          experimentalFeatures: {
-              useBarCodeDetectorIfSupported: true // ⚡ Menyedot kekuatan scanner asli/native bawaan HP
-          }
+          qrbox: { width: 250, height: 250 }
       };
       
       let started = false;
@@ -1942,8 +1919,8 @@ const ViewInputData = ({
               }
 
               if (bestCam) {
-                  // Hanya gunakan ID Kamera (Jangan pakai atribut advanced zoom agar tidak diblokir HP)
-                  await html5QrCode.start(bestCam.id, qrConfig, onSuccess, onError);
+                  // PERBAIKAN: Paksa kamera yang terpilih untuk menyala dalam resolusi HD (1280p)
+                  await html5QrCode.start({ deviceId: { exact: bestCam.id }, width: { ideal: 1280 } }, qrConfig, onSuccess, onError);
                   started = true;
               }
           }
@@ -1953,7 +1930,6 @@ const ViewInputData = ({
 
       if (!started) {
           try {
-              // Fallback 1: Paksa resolusi 1280p
               await html5QrCode.start({ facingMode: "environment", width: { ideal: 1280 } }, qrConfig, onSuccess, onError);
               started = true;
           } catch (err2) {
@@ -1962,7 +1938,6 @@ const ViewInputData = ({
       }
 
       if (!started) {
-          // Fallback 2: Dasar
           await html5QrCode.start({ facingMode: "environment" }, qrConfig, onSuccess, onError);
       }
 
@@ -2689,7 +2664,7 @@ const ViewScanner = ({ installedSeals, showNotification }) => {
   const processScannedData = (rawText) => { 
       setScanResult({ 
         raw: rawText, 
-        decoded: decryptData(rawText) 
+        decoded: { success: true, data: rawText.trim() } 
       }); 
   };
 
@@ -2738,14 +2713,10 @@ const ViewScanner = ({ installedSeals, showNotification }) => {
         };
         const onError = (errorMessage) => {};
         
-        // PERBAIKAN: Konfigurasi Scanner yang dioptimalkan dengan Native Hardware API
+        // KEMBALI KE PENGATURAN AMAN: Menghapus fitur eksperimental yang memblokir kamera
         const qrConfig = { 
             fps: 15, 
-            qrbox: { width: 280, height: 280 }, // Diperbesar sedikit agar fokus HP bisa mundur (tidak blur)
-            disableFlip: false, // Membantu membaca QR dari berbagai posisi
-            experimentalFeatures: {
-                useBarCodeDetectorIfSupported: true // ⚡ Menyedot kekuatan scanner asli/native bawaan HP
-            }
+            qrbox: { width: 250, height: 250 }
         };
         
         let started = false;
@@ -2780,7 +2751,8 @@ const ViewScanner = ({ installedSeals, showNotification }) => {
             setCurrentCamIndex(camIndexToUse);
 
             if (targetList.length > 0 && targetList[camIndexToUse]) {
-                await html5QrCode.start(targetList[camIndexToUse].id, qrConfig, onSuccess, onError);
+                // PERBAIKAN: Paksa kamera yang terpilih untuk menyala dalam resolusi HD (1280p)
+                await html5QrCode.start({ deviceId: { exact: targetList[camIndexToUse].id }, width: { ideal: 1280 } }, qrConfig, onSuccess, onError);
                 started = true;
             }
         } catch (camErr) {
@@ -2789,7 +2761,6 @@ const ViewScanner = ({ installedSeals, showNotification }) => {
         
         if (!started && activeScanRef.current) {
             try {
-                // Fallback 1: Paksa resolusi 1280p
                 await html5QrCode.start({ facingMode: "environment", width: { ideal: 1280 } }, qrConfig, onSuccess, onError);
                 started = true;
             } catch (err2) {
@@ -2798,7 +2769,6 @@ const ViewScanner = ({ installedSeals, showNotification }) => {
         }
 
         if (!started && activeScanRef.current) {
-            // Fallback 2: Dasar
             await html5QrCode.start({ facingMode: "environment" }, qrConfig, onSuccess, onError);
         }
     } catch (err) { 
