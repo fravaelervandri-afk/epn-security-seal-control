@@ -2596,14 +2596,6 @@ const ViewScanner = ({ installedSeals, showNotification }) => {
   const [isScanning, setIsScanning] = useState(false);
   const scannerRef = useRef(null);
 
-  useEffect(() => {
-    return () => {
-      if (scannerRef.current) { 
-        scannerRef.current.stop().catch(() => {}); 
-      }
-    };
-  }, []);
-
   const processScannedData = (rawText) => { 
       setScanResult({ 
         raw: rawText, 
@@ -2650,37 +2642,69 @@ const ViewScanner = ({ installedSeals, showNotification }) => {
     setIsScanning(false);
   };
 
+  // Jalankan scanner OTOMATIS saat komponen pertama kali dirender
+  useEffect(() => {
+    let isMounted = true;
+    startScanner();
+    return () => {
+      isMounted = false;
+      if (scannerRef.current) { 
+        scannerRef.current.stop().catch(() => {}); 
+      }
+    };
+  }, []);
+
   const installedMatches = scanResult && scanResult.decoded.success 
       ? installedSeals.filter(s => s.sealId === scanResult.decoded.data) 
       : [];
 
   return (
-    <div className="max-w-2xl mx-auto space-y-6 animate-in slide-in-from-bottom-8 duration-500">
-      <div className="bg-white p-8 md:p-12 rounded-[2rem] shadow-sm border border-gray-100 flex flex-col items-center">
-        <div className="mb-6 bg-blue-50/50 p-4 rounded-full">
-          <Scan size={40} className="text-[#146b99]" strokeWidth={1.5} />
+    <>
+      {/* MODAL SCANNER LAYAR PENUH SEPERTI APLIKASI NATIVE */}
+      {isScanning && (
+        <div className="fixed inset-0 bg-black z-[9999] flex flex-col animate-in fade-in zoom-in duration-200">
+           <div className="p-4 bg-gray-900 text-white flex justify-between items-center shadow-md">
+              <div className="flex items-center gap-3">
+                 <div className="bg-[#146b99] p-2 rounded-lg">
+                   <Scan size={20} />
+                 </div>
+                 <div>
+                    <h3 className="font-bold text-sm leading-none">Verifikasi Segel</h3>
+                    <p className="text-[10px] text-gray-400 mt-1 uppercase tracking-widest">
+                      Arahkan ke QR Code
+                    </p>
+                 </div>
+              </div>
+              <button 
+                onClick={stopScanner} 
+                className="p-2 bg-gray-800 rounded-full hover:bg-red-500 transition-colors"
+              >
+                <X size={20}/>
+              </button>
+           </div>
+           <div className="flex-1 flex flex-col justify-center items-center bg-black relative p-4">
+               <div className="absolute inset-0 border-4 border-[#146b99] opacity-20 pointer-events-none m-4 rounded-3xl"></div>
+               <div 
+                 id="reader" 
+                 className="w-full max-w-md aspect-square bg-gray-900 rounded-2xl overflow-hidden shadow-[0_0_50px_rgba(0,0,0,0.5)]"
+               ></div>
+               <p className="text-white text-sm font-semibold mt-8 animate-pulse text-center">Sedang memindai...</p>
+           </div>
         </div>
-        
-        <h2 className="text-2xl font-extrabold text-gray-800 mb-3 text-center">Verifikasi Keaslian Segel</h2>
-        <p className="text-gray-500 text-sm font-medium text-center mb-8 max-w-md">
-          Gunakan kamera untuk memindai kode EPN Security Seal QR.
-        </p>
+      )}
 
-        {isScanning ? (
-          <div className="w-full max-w-md flex flex-col items-center mb-8 animate-in fade-in zoom-in duration-300">
-             <div 
-               id="reader" 
-               className="w-full rounded-2xl overflow-hidden shadow-lg border-4 border-slate-800 bg-black aspect-square"
-             ></div>
-             <button 
-               onClick={stopScanner} 
-               className="mt-6 bg-rose-500 text-white px-8 py-3 rounded-xl font-bold hover:bg-rose-600 transition-colors shadow-md flex items-center gap-2"
-             >
-               <X size={18} /> Batalkan Pemindaian
-             </button>
+      <div className="max-w-2xl mx-auto space-y-6 animate-in slide-in-from-bottom-8 duration-500">
+        <div className="bg-white p-8 md:p-12 rounded-[2rem] shadow-sm border border-gray-100 flex flex-col items-center text-center">
+          <div className="w-24 h-24 bg-slate-50 rounded-full flex items-center justify-center mb-4">
+             <Camera size={40} className="text-[#146b99]" />
           </div>
-        ) : (
-          <div className="w-full max-w-md aspect-[4/3] bg-[#0f172a] rounded-3xl relative overflow-hidden flex flex-col items-center justify-center mb-8 shadow-lg">
+          
+          <h2 className="text-2xl font-extrabold text-gray-800 mb-3">Scanner Siap</h2>
+          <p className="text-gray-500 text-sm font-medium mb-8 max-w-md">
+            Kamera otomatis terbuka ke layar penuh. Jika terhenti, silakan klik tombol di bawah ini.
+          </p>
+
+          <div className="w-full max-w-md aspect-[4/3] bg-[#0f172a] rounded-3xl relative overflow-hidden flex flex-col items-center justify-center mb-4 shadow-lg">
              <div className="w-40 h-40 border-2 border-gray-600 rounded-2xl flex items-center justify-center mb-4">
                <Camera size={48} className="text-gray-600" strokeWidth={1.5} />
              </div>
@@ -2688,67 +2712,66 @@ const ViewScanner = ({ installedSeals, showNotification }) => {
                onClick={startScanner} 
                className="absolute bottom-6 bg-[#146b99] hover:bg-[#11577c] px-6 py-3 rounded-full border border-blue-400 text-white font-bold tracking-wider shadow-lg transition-all flex items-center gap-2 z-10"
              >
-                <ScanLine size={18} /> MULAI SCAN KAMERA
+                <ScanLine size={18} /> BUKA KAMERA SEKARANG
              </button>
+          </div>
+        </div>
+
+        {scanResult && !isScanning && (
+          <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-200 animate-in fade-in zoom-in duration-300">
+            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-4">Hasil Pemindaian</p>
+            
+            <div className="mb-4">
+               <p className="text-xs font-bold text-slate-500 mb-1">Data Mentah Tersandi:</p>
+               <code className="block bg-slate-50 text-slate-500 p-2 rounded-lg text-xs break-all border border-slate-200">
+                 {scanResult.raw}
+               </code>
+            </div>
+
+            {scanResult.decoded.success ? (
+              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-5 p-5 bg-emerald-50 border border-emerald-100 rounded-2xl">
+                 <div className="bg-emerald-500 text-white p-3 rounded-full shadow-lg shadow-emerald-200 shrink-0">
+                   <ShieldCheck size={32} />
+                 </div>
+                 <div className="flex-1 w-full">
+                    <h4 className="text-emerald-900 font-black text-xl leading-none">SEAL VALID!</h4>
+                    <p className="text-emerald-700 font-semibold text-sm mt-1">
+                      ID Terdaftar: <span className="font-mono bg-emerald-200 px-1.5 rounded break-all">{scanResult.decoded.data}</span>
+                    </p>
+                    
+                    {installedMatches.length > 0 ? (
+                       <div className="mt-3 space-y-2">
+                         {installedMatches.map((match, idx) => (
+                           <div key={idx} className="p-3 bg-white rounded-lg border border-emerald-100 text-xs">
+                             <span className="font-extrabold text-emerald-800 block mb-1">Info Lapangan ({match.seal_type}):</span> 
+                             Segel ini sedang terpasang di kendaraan <b>{match.nopol || match.location}</b> (Posisi: {match.seal_category || 'Tidak diketahui'}).
+                           </div>
+                         ))}
+                       </div>
+                    ) : (
+                       <div className="mt-3 p-3 bg-amber-50 rounded-lg border border-amber-200 text-xs font-semibold text-amber-800">
+                         Segel ini Valid, namun <b className="font-extrabold">belum terdata pemasangannya</b> di sistem (belum di-input).
+                       </div>
+                    )}
+                 </div>
+              </div>
+            ) : (
+              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-5 p-5 bg-rose-50 border border-rose-100 rounded-2xl">
+                 <div className="bg-rose-500 text-white p-3 rounded-full shadow-lg shadow-rose-200 shrink-0">
+                   <ShieldAlert size={32} />
+                 </div>
+                 <div>
+                   <h4 className="text-rose-900 font-black text-xl leading-none">INVALID!</h4>
+                   <p className="text-rose-700 font-semibold text-sm mt-1">{scanResult.decoded.error}</p>
+                 </div>
+              </div>
+            )}
           </div>
         )}
       </div>
-
-      {scanResult && !isScanning && (
-        <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-200 animate-in fade-in zoom-in duration-300">
-          <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-4">Hasil Pemindaian</p>
-          
-          <div className="mb-4">
-             <p className="text-xs font-bold text-slate-500 mb-1">Data Mentah Tersandi:</p>
-             <code className="block bg-slate-50 text-slate-500 p-2 rounded-lg text-xs break-all border border-slate-200">
-               {scanResult.raw}
-             </code>
-          </div>
-
-          {scanResult.decoded.success ? (
-            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-5 p-5 bg-emerald-50 border border-emerald-100 rounded-2xl">
-               <div className="bg-emerald-500 text-white p-3 rounded-full shadow-lg shadow-emerald-200 shrink-0">
-                 <ShieldCheck size={32} />
-               </div>
-               <div className="flex-1 w-full">
-                  <h4 className="text-emerald-900 font-black text-xl leading-none">SEAL VALID!</h4>
-                  <p className="text-emerald-700 font-semibold text-sm mt-1">
-                    ID Terdaftar: <span className="font-mono bg-emerald-200 px-1.5 rounded break-all">{scanResult.decoded.data}</span>
-                  </p>
-                  
-                  {installedMatches.length > 0 ? (
-                     <div className="mt-3 space-y-2">
-                       {installedMatches.map((match, idx) => (
-                         <div key={idx} className="p-3 bg-white rounded-lg border border-emerald-100 text-xs">
-                           <span className="font-extrabold text-emerald-800 block mb-1">Info Lapangan ({match.seal_type}):</span> 
-                           Segel ini sedang terpasang di kendaraan <b>{match.nopol || match.location}</b> (Posisi: {match.seal_category || 'Tidak diketahui'}).
-                         </div>
-                       ))}
-                     </div>
-                  ) : (
-                     <div className="mt-3 p-3 bg-amber-50 rounded-lg border border-amber-200 text-xs font-semibold text-amber-800">
-                       Segel ini Valid, namun <b className="font-extrabold">belum terdata pemasangannya</b> di sistem (belum di-input).
-                     </div>
-                  )}
-               </div>
-            </div>
-          ) : (
-            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-5 p-5 bg-rose-50 border border-rose-100 rounded-2xl">
-               <div className="bg-rose-500 text-white p-3 rounded-full shadow-lg shadow-rose-200 shrink-0">
-                 <ShieldAlert size={32} />
-               </div>
-               <div>
-                 <h4 className="text-rose-900 font-black text-xl leading-none">INVALID!</h4>
-                 <p className="text-rose-700 font-semibold text-sm mt-1">{scanResult.decoded.error}</p>
-               </div>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
+    </>
   );
 };
-
 
 // ============================================================================
 // KOMPONEN APP (PENGHUBUNG SEMUA HALAMAN)
