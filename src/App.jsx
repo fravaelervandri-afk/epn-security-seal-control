@@ -2671,6 +2671,10 @@ const ViewScanner = ({ installedSeals, showNotification }) => {
   const scannerRef = useRef(null);
   const activeScanRef = useRef(false);
 
+  // State untuk Tukar Kamera
+  const [cameras, setCameras] = useState([]);
+  const [currentCamIndex, setCurrentCamIndex] = useState(0);
+
   const processScannedData = (rawText) => { 
       setScanResult({ 
         raw: rawText, 
@@ -2678,8 +2682,8 @@ const ViewScanner = ({ installedSeals, showNotification }) => {
       }); 
   };
 
-  const startScanner = async () => {
-    if (activeScanRef.current) return;
+  const startScanner = async (forcedCamIndex = null) => {
+    if (activeScanRef.current && forcedCamIndex === null) return;
     activeScanRef.current = true;
     
     setScanResult(null); 
@@ -2725,40 +2729,38 @@ const ViewScanner = ({ installedSeals, showNotification }) => {
         const qrConfig = { fps: 15, qrbox: { width: 250, height: 250 } };
         let started = false;
 
-        // 2. Logika Cerdas Pemilihan Kamera (Filter Nama Lensa, Tanpa Constraint Zoom)
+        // 2. Logika Pemilihan Kamera & Fitur Tukar Kamera
         try {
-            const cameras = await Html5Qrcode.getCameras();
-            if (cameras && cameras.length > 0) {
-                const backCams = cameras.filter(c => {
-                    const lbl = c.label.toLowerCase();
-                    return lbl.includes('back') || lbl.includes('belakang') || lbl.includes('environment');
-                });
-                
-                let bestCam = null;
-                if (backCams.length > 0) {
-                    // Prioritas 1: Cari kamera yang secara eksplisit bernama 'main', '1x', 'standard'
-                    bestCam = backCams.find(c => {
+            let targetList = cameras;
+            if (targetList.length === 0) {
+                const fetchedCameras = await Html5Qrcode.getCameras();
+                if (fetchedCameras && fetchedCameras.length > 0) {
+                    const backCams = fetchedCameras.filter(c => {
                         const lbl = c.label.toLowerCase();
-                        return lbl.includes('main') || lbl.includes('1x') || lbl.includes('standard') || lbl.includes('utama');
+                        return lbl.includes('back') || lbl.includes('belakang') || lbl.includes('environment');
                     });
-
-                    // Prioritas 2: Buang semua lensa aneh (ultra, wide, macro, tele, depth)
-                    if (!bestCam) {
-                        const normalCams = backCams.filter(c => {
-                            const lbl = c.label.toLowerCase();
-                            return !lbl.includes('ultra') && !lbl.includes('0.5') && !lbl.includes('wide') && !lbl.includes('macro') && !lbl.includes('tele') && !lbl.includes('depth');
-                        });
-                        bestCam = normalCams.length > 0 ? normalCams[0] : backCams[0];
-                    }
-                } else {
-                    bestCam = cameras[0];
+                    targetList = backCams.length > 0 ? backCams : fetchedCameras;
+                    setCameras(targetList);
                 }
+            }
 
-                if (bestCam) {
-                    // Hanya gunakan ID Kamera (Jangan pakai atribut advanced zoom agar tidak diblokir HP)
-                    await html5QrCode.start(bestCam.id, qrConfig, onSuccess, onError);
-                    started = true;
-                }
+            let camIndexToUse = 0;
+            if (forcedCamIndex !== null) {
+                camIndexToUse = forcedCamIndex;
+            } else if (targetList.length > 0) {
+                const bestIdx = targetList.findIndex(c => {
+                    const lbl = c.label.toLowerCase();
+                    if (lbl.includes('main') || lbl.includes('1x') || lbl.includes('standard') || lbl.includes('utama')) return true;
+                    return !lbl.includes('ultra') && !lbl.includes('0.5') && !lbl.includes('wide') && !lbl.includes('macro') && !lbl.includes('tele') && !lbl.includes('depth');
+                });
+                camIndexToUse = bestIdx !== -1 ? bestIdx : 0;
+            }
+
+            setCurrentCamIndex(camIndexToUse);
+
+            if (targetList.length > 0 && targetList[camIndexToUse]) {
+                await html5QrCode.start(targetList[camIndexToUse].id, qrConfig, onSuccess, onError);
+                started = true;
             }
         } catch (camErr) {
             console.warn("Gagal mengambil daftar spesifik kamera:", camErr);
@@ -2785,6 +2787,19 @@ const ViewScanner = ({ installedSeals, showNotification }) => {
           activeScanRef.current = false;
       }
     }
+  };
+
+  const switchCamera = async () => {
+    if (cameras.length <= 1) return;
+    const nextIdx = (currentCamIndex + 1) % cameras.length;
+    
+    if (scannerRef.current) {
+        await scannerRef.current.stop().catch(() => {});
+        scannerRef.current.clear();
+        scannerRef.current = null;
+    }
+    activeScanRef.current = false;
+    startScanner(nextIdx);
   };
 
   const stopScanner = async () => {
@@ -2844,6 +2859,15 @@ const ViewScanner = ({ installedSeals, showNotification }) => {
                  className="w-full max-w-md aspect-square bg-gray-900 rounded-2xl overflow-hidden shadow-[0_0_50px_rgba(0,0,0,0.5)]"
                ></div>
                <p className="text-white text-sm font-semibold mt-8 animate-pulse text-center">Sedang memindai...</p>
+
+               {cameras.length > 1 && (
+                 <button 
+                   onClick={switchCamera}
+                   className="mt-8 bg-gray-800/80 backdrop-blur-md border border-gray-600 text-white px-6 py-3 rounded-full font-bold tracking-wider hover:bg-gray-700 transition-colors flex items-center gap-2 z-10"
+                 >
+                   <SwitchCamera size={18} /> Ganti Lensa ({currentCamIndex + 1}/{cameras.length})
+                 </button>
+               )}
            </div>
         </div>
       )}
