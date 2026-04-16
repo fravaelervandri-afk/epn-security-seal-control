@@ -3010,8 +3010,8 @@ const App = () => {
             {(activeMenu === 'pelaporan-segel' || activeMenu === 'daftar-pelaporan') && (
               <div className="flex flex-col items-center justify-center min-h-[60vh] animate-in fade-in zoom-in duration-500">
                 <img 
-                  src="https://cdn-icons-png.flaticon.com/512/3200/3200921.png" 
-                  alt="Under Construction" 
+                  src="https://cdn-icons-png.flaticon.com/512/1046/1046374.png" 
+                  alt="Under Construction Tools" 
                   className="w-48 h-48 object-contain mb-8 drop-shadow-xl hover:scale-105 transition-transform opacity-90" 
                 />
                 <h2 className="text-3xl font-black text-slate-800 mb-3 text-center tracking-tight">Tahap Pengembangan</h2>
