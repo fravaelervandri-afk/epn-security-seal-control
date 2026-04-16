@@ -3388,14 +3388,14 @@ const App = () => {
             {(activeMenu === 'pelaporan-segel' || activeMenu === 'daftar-pelaporan') && (
               <div className="flex flex-col items-center justify-center min-h-[60vh] animate-in fade-in zoom-in duration-500">
                 <img 
-                  src="https://cdn-icons-png.flaticon.com/512/1046/1046374.png" 
+                  // ⬇️ SILAKAN GANTI ISI SRC DI BAWAH INI DENGAN PATH LOKAL ATAU URL GAMBAR ANDA
+                  // Contoh lokal: "/under-construction.png" (pastikan file ada di folder public proyek Anda)
+                  src="under_construction.jpg" 
                   alt="Under Construction Tools" 
-                  className="w-48 h-48 object-contain mb-8 drop-shadow-xl hover:scale-105 transition-transform opacity-90" 
+                  className="w-300 h-140 object-contain mb-8 drop-shadow-xl hover:scale-105 transition-transform opacity-90" 
+                  // Jika gambar belum Anda tambahkan ke folder, gambar otomatis disembunyikan agar UI tidak rusak
+                  onError={(e) => { e.target.style.display = 'none'; }}
                 />
-                <h2 className="text-3xl font-black text-slate-800 mb-3 text-center tracking-tight">Tahap Pengembangan</h2>
-                <p className="text-slate-500 font-medium text-center max-w-md leading-relaxed">
-                  Fitur <b className="text-[#146b99]">{activeMenu === 'pelaporan-segel' ? 'Pelaporan Segel' : 'Daftar Pelaporan'}</b> sedang dibangun untuk memberikan pengalaman analitik terbaik. Silakan nantikan pembaruan berikutnya!
-                </p>
               </div>
             )}
             
