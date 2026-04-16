@@ -29,7 +29,8 @@ import {
   Type,
   FileText,
   CheckCircle2,
-  AlertTriangle
+  AlertTriangle,
+  SwitchCamera
 } from 'lucide-react';
 
 // --- INTEGRASI CLOUD DATABASE (SUPABASE UNTUK PRODUKSI) ---
