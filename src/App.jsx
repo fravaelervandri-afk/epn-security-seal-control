@@ -501,9 +501,9 @@ const ViewQRGenerator = ({
   setPrintConfig,
   showNotification
 }) => {
-  const [inputPrefix, setInputPrefix] = useState('EPN-RTC-');
+  const [inputPrefix, setInputPrefix] = useState('EPN-');
   const [startNum, setStartNum] = useState(1);
-  const [count, setCount] = useState(306);
+  const [count, setCount] = useState(1);
   const [copiesPerId, setCopiesPerId] = useState(1);
   
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false); 
@@ -1901,7 +1901,7 @@ const ViewInputData = ({
       const qrConfig = { fps: 15, qrbox: { width: 250, height: 250 } };
       let started = false;
 
-      // 2. Logika Cerdas Pemilihan Kamera (Perbaikan Format Config)
+      // 2. Logika Cerdas Pemilihan Kamera (Filter Nama Lensa, Tanpa Constraint Zoom)
       try {
           const cameras = await Html5Qrcode.getCameras();
           if (cameras && cameras.length > 0) {
@@ -1909,15 +1909,29 @@ const ViewInputData = ({
                   const lbl = c.label.toLowerCase();
                   return lbl.includes('back') || lbl.includes('belakang') || lbl.includes('environment');
               });
-              const targetList = backCams.length > 0 ? backCams : cameras;
-              let bestCam = targetList.find(c => {
-                  const lbl = c.label.toLowerCase();
-                  return !lbl.includes('ultra') && !lbl.includes('0.5') && !lbl.includes('wide') && !lbl.includes('macro');
-              });
-              if (!bestCam) bestCam = targetList[0];
+              
+              let bestCam = null;
+              if (backCams.length > 0) {
+                  // Prioritas 1: Cari kamera yang secara eksplisit bernama 'main', '1x', 'standard'
+                  bestCam = backCams.find(c => {
+                      const lbl = c.label.toLowerCase();
+                      return lbl.includes('main') || lbl.includes('1x') || lbl.includes('standard') || lbl.includes('utama');
+                  });
+
+                  // Prioritas 2: Buang semua lensa aneh (ultra, wide, macro, tele, depth)
+                  if (!bestCam) {
+                      const normalCams = backCams.filter(c => {
+                          const lbl = c.label.toLowerCase();
+                          return !lbl.includes('ultra') && !lbl.includes('0.5') && !lbl.includes('wide') && !lbl.includes('macro') && !lbl.includes('tele') && !lbl.includes('depth');
+                      });
+                      bestCam = normalCams.length > 0 ? normalCams[0] : backCams[0];
+                  }
+              } else {
+                  bestCam = cameras[0];
+              }
 
               if (bestCam) {
-                  // WAJIB: ID Kamera sebagai string, bukan object
+                  // Hanya gunakan ID Kamera (Jangan pakai atribut advanced zoom agar tidak diblokir HP)
                   await html5QrCode.start(bestCam.id, qrConfig, onSuccess, onError);
                   started = true;
               }
@@ -1928,6 +1942,7 @@ const ViewInputData = ({
 
       if (!started) {
           try {
+              // Fallback 1: Paksa resolusi 1280p
               await html5QrCode.start({ facingMode: "environment", width: { ideal: 1280 } }, qrConfig, onSuccess, onError);
               started = true;
           } catch (err2) {
@@ -1936,6 +1951,7 @@ const ViewInputData = ({
       }
 
       if (!started) {
+          // Fallback 2: Dasar
           await html5QrCode.start({ facingMode: "environment" }, { fps: 10, qrbox: { width: 250, height: 250 } }, onSuccess, onError);
       }
 
@@ -2709,7 +2725,7 @@ const ViewScanner = ({ installedSeals, showNotification }) => {
         const qrConfig = { fps: 15, qrbox: { width: 250, height: 250 } };
         let started = false;
 
-        // 2. Logika Cerdas Pemilihan Kamera (Perbaikan Format Config)
+        // 2. Logika Cerdas Pemilihan Kamera (Filter Nama Lensa, Tanpa Constraint Zoom)
         try {
             const cameras = await Html5Qrcode.getCameras();
             if (cameras && cameras.length > 0) {
@@ -2717,15 +2733,29 @@ const ViewScanner = ({ installedSeals, showNotification }) => {
                     const lbl = c.label.toLowerCase();
                     return lbl.includes('back') || lbl.includes('belakang') || lbl.includes('environment');
                 });
-                const targetList = backCams.length > 0 ? backCams : cameras;
-                let bestCam = targetList.find(c => {
-                    const lbl = c.label.toLowerCase();
-                    return !lbl.includes('ultra') && !lbl.includes('0.5') && !lbl.includes('wide') && !lbl.includes('macro');
-                });
-                if (!bestCam) bestCam = targetList[0]; 
+                
+                let bestCam = null;
+                if (backCams.length > 0) {
+                    // Prioritas 1: Cari kamera yang secara eksplisit bernama 'main', '1x', 'standard'
+                    bestCam = backCams.find(c => {
+                        const lbl = c.label.toLowerCase();
+                        return lbl.includes('main') || lbl.includes('1x') || lbl.includes('standard') || lbl.includes('utama');
+                    });
+
+                    // Prioritas 2: Buang semua lensa aneh (ultra, wide, macro, tele, depth)
+                    if (!bestCam) {
+                        const normalCams = backCams.filter(c => {
+                            const lbl = c.label.toLowerCase();
+                            return !lbl.includes('ultra') && !lbl.includes('0.5') && !lbl.includes('wide') && !lbl.includes('macro') && !lbl.includes('tele') && !lbl.includes('depth');
+                        });
+                        bestCam = normalCams.length > 0 ? normalCams[0] : backCams[0];
+                    }
+                } else {
+                    bestCam = cameras[0];
+                }
 
                 if (bestCam) {
-                    // WAJIB: ID Kamera sebagai string, bukan object
+                    // Hanya gunakan ID Kamera (Jangan pakai atribut advanced zoom agar tidak diblokir HP)
                     await html5QrCode.start(bestCam.id, qrConfig, onSuccess, onError);
                     started = true;
                 }
@@ -2736,6 +2766,7 @@ const ViewScanner = ({ installedSeals, showNotification }) => {
         
         if (!started && activeScanRef.current) {
             try {
+                // Fallback 1: Paksa resolusi 1280p
                 await html5QrCode.start({ facingMode: "environment", width: { ideal: 1280 } }, qrConfig, onSuccess, onError);
                 started = true;
             } catch (err2) {
@@ -2744,6 +2775,7 @@ const ViewScanner = ({ installedSeals, showNotification }) => {
         }
 
         if (!started && activeScanRef.current) {
+            // Fallback 2: Dasar
             await html5QrCode.start({ facingMode: "environment" }, { fps: 10, qrbox: { width: 250, height: 250 } }, onSuccess, onError);
         }
     } catch (err) { 
