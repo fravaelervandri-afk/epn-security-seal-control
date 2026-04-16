@@ -1899,7 +1899,17 @@ const ViewInputData = ({
       };
 
       const onError = (err) => {};
-      const qrConfig = { fps: 15, qrbox: { width: 250, height: 250 } };
+      
+      // PERBAIKAN: Konfigurasi Scanner yang dioptimalkan dengan Native Hardware API
+      const qrConfig = { 
+          fps: 15, 
+          qrbox: { width: 280, height: 280 }, // Diperbesar sedikit agar fokus HP bisa mundur (tidak blur)
+          disableFlip: false, // Membantu membaca QR dari berbagai posisi
+          experimentalFeatures: {
+              useBarCodeDetectorIfSupported: true // ⚡ Menyedot kekuatan scanner asli/native bawaan HP
+          }
+      };
+      
       let started = false;
 
       // 2. Logika Cerdas Pemilihan Kamera (Filter Nama Lensa, Tanpa Constraint Zoom)
@@ -1953,7 +1963,7 @@ const ViewInputData = ({
 
       if (!started) {
           // Fallback 2: Dasar
-          await html5QrCode.start({ facingMode: "environment" }, { fps: 10, qrbox: { width: 250, height: 250 } }, onSuccess, onError);
+          await html5QrCode.start({ facingMode: "environment" }, qrConfig, onSuccess, onError);
       }
 
     } catch (err) {
@@ -2727,7 +2737,17 @@ const ViewScanner = ({ installedSeals, showNotification }) => {
             }
         };
         const onError = (errorMessage) => {};
-        const qrConfig = { fps: 15, qrbox: { width: 250, height: 250 } };
+        
+        // PERBAIKAN: Konfigurasi Scanner yang dioptimalkan dengan Native Hardware API
+        const qrConfig = { 
+            fps: 15, 
+            qrbox: { width: 280, height: 280 }, // Diperbesar sedikit agar fokus HP bisa mundur (tidak blur)
+            disableFlip: false, // Membantu membaca QR dari berbagai posisi
+            experimentalFeatures: {
+                useBarCodeDetectorIfSupported: true // ⚡ Menyedot kekuatan scanner asli/native bawaan HP
+            }
+        };
+        
         let started = false;
 
         // 2. Logika Pemilihan Kamera & Fitur Tukar Kamera
@@ -2779,7 +2799,7 @@ const ViewScanner = ({ installedSeals, showNotification }) => {
 
         if (!started && activeScanRef.current) {
             // Fallback 2: Dasar
-            await html5QrCode.start({ facingMode: "environment" }, { fps: 10, qrbox: { width: 250, height: 250 } }, onSuccess, onError);
+            await html5QrCode.start({ facingMode: "environment" }, qrConfig, onSuccess, onError);
         }
     } catch (err) { 
       if (activeScanRef.current) {
