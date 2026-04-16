@@ -117,6 +117,103 @@ const CustomQRCodeWithID = ({ displayValue, qrPayload, size = 200, showText = fa
   return <canvas ref={canvasRef} width={size} height={size} className="w-full h-auto block bg-white" />;
 };
 
+// --- BAGIAN 3: EKSTRAKTOR URL & HALAMAN VERIFIKASI PUBLIK ---
+const extractSealId = (text) => {
+  try {
+      if (text.includes('?verify=')) {
+          const url = new URL(text);
+          return url.searchParams.get('verify') || text;
+      }
+      return text;
+  } catch(e) {
+      return text;
+  }
+};
+
+const PublicVerification = ({ sealId, dbClient }) => {
+  const [status, setStatus] = useState('loading');
+  const [data, setData] = useState([]);
+
+  useEffect(() => {
+    const checkSeal = async () => {
+      try {
+        const { data: sealData, error } = await dbClient
+          .from('installed_seals')
+          .select('*')
+          .eq('sealId', sealId);
+
+        if (error) throw error;
+
+        if (sealData && sealData.length > 0) {
+          setData(sealData);
+          setStatus('valid');
+        } else {
+          setStatus('invalid');
+        }
+      } catch (err) {
+        console.error("Verification error:", err);
+        setStatus('invalid');
+      }
+    };
+    checkSeal();
+  }, [dbClient, sealId]);
+
+  return (
+    <div className="min-h-screen bg-[#f8f9fa] flex flex-col items-center justify-center p-6 font-sans">
+      <div className="bg-white w-full max-w-md rounded-3xl shadow-xl overflow-hidden animate-in zoom-in duration-500">
+         <div className="bg-slate-900 p-4 flex justify-center">
+             <img src="/logo-elnusa.png" alt="Elnusa Logo" className="h-8 object-contain brightness-0 invert" onError={(e) => e.target.style.display='none'} />
+         </div>
+         <div className="p-8 flex flex-col items-center text-center">
+            {status === 'loading' && (
+               <div className="py-12 flex flex-col items-center">
+                  <Loader2 size={48} className="animate-spin text-[#146b99] mb-4" />
+                  <p className="text-slate-500 font-bold">Memverifikasi Data Segel...</p>
+               </div>
+            )}
+            {status === 'valid' && (
+               <>
+                  <div className="w-24 h-24 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mb-6 shadow-inner">
+                     <ShieldCheck size={48} />
+                  </div>
+                  <h2 className="text-3xl font-black text-slate-800 mb-2">SEAL VALID</h2>
+                  <p className="text-slate-500 font-medium mb-6">Segel ini resmi terdaftar di sistem Elnusa Petrofin.</p>
+                  
+                  <div className="w-full bg-slate-50 rounded-xl p-4 text-left border border-slate-200 space-y-3">
+                     <div>
+                        <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">ID Segel</p>
+                        <p className="font-mono font-bold text-[#146b99] text-lg">{sealId}</p>
+                     </div>
+                     {data.map((item, idx) => (
+                         <div key={idx} className="pt-3 border-t border-slate-200">
+                            <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Detail Objek {idx + 1}</p>
+                            <p className="font-bold text-slate-800">{item.nopol} ({item.seal_category})</p>
+                            <p className="text-xs text-slate-500 mt-1">Dipasang: {item.installDate}</p>
+                            <p className="text-xs text-slate-500">Lokasi: {item.location}</p>
+                         </div>
+                     ))}
+                  </div>
+               </>
+            )}
+            {status === 'invalid' && (
+               <>
+                  <div className="w-24 h-24 bg-rose-100 text-rose-600 rounded-full flex items-center justify-center mb-6 shadow-inner">
+                     <ShieldAlert size={48} />
+                  </div>
+                  <h2 className="text-3xl font-black text-slate-800 mb-2">TIDAK DITEMUKAN</h2>
+                  <p className="text-slate-500 font-medium mb-6">ID Segel <b className="font-mono text-slate-700">{sealId}</b> tidak terdaftar sebagai segel terpasang atau tidak valid.</p>
+               </>
+            )}
+
+            <button onClick={() => window.location.href = '/'} className="mt-8 w-full py-3.5 bg-[#146b99] hover:bg-[#11577c] text-white font-bold rounded-xl transition-colors shadow-md">
+               Masuk ke Sistem Pusat
+            </button>
+         </div>
+      </div>
+    </div>
+  );
+};
+
 
 // ============================================================================
 // KOMPONEN: LANDING PAGE
@@ -487,9 +584,9 @@ const ViewQRGenerator = ({
   setPrintConfig,
   showNotification
 }) => {
-  const [inputPrefix, setInputPrefix] = useState('EPN-RTC-');
+  const [inputPrefix, setInputPrefix] = useState('EPN-');
   const [startNum, setStartNum] = useState(1);
-  const [count, setCount] = useState(306);
+  const [count, setCount] = useState(1);
   const [copiesPerId, setCopiesPerId] = useState(1);
   
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false); 
@@ -680,7 +777,7 @@ const ViewQRGenerator = ({
         await Promise.all(batch.map(async (id) => {
            try {
               // OPTIMASI: Resolusi diturunkan ke 300px (Sangat tajam untuk cetak, tapi file jauh lebih ringan)
-              const dataUrl = await generateQROnCanvas(id, id, 300, printConfig.embedQrText);
+              const dataUrl = await generateQROnCanvas(id, `${window.location.origin}/?verify=${id}`, 300, printConfig.embedQrText);
               qrImageCache[id] = dataUrl;
            } catch (e) {
               console.error(`Gagal fetch QR untuk ${id}`, e);
@@ -1346,7 +1443,7 @@ const ViewQRGenerator = ({
                   >
                      <CustomQRCodeWithID 
                        displayValue={`${inputPrefix}XXXXX`} 
-                       qrPayload={`${inputPrefix}XXXXX`} 
+                       qrPayload={`${window.location.origin}/?verify=${inputPrefix}XXXXX`} 
                        size={300} 
                        showText={printConfig.embedQrText} 
                      />
@@ -1499,7 +1596,7 @@ const ViewQRGenerator = ({
                          >
                             <CustomQRCodeWithID 
                               displayValue={item.id} 
-                              qrPayload={item.id} 
+                              qrPayload={`${window.location.origin}/?verify=${item.id}`} 
                               size={250} 
                               showText={printConfig.embedQrText} 
                             />
@@ -1849,7 +1946,7 @@ const ViewInputData = ({
       inputScannerRef.current = html5QrCode;
 
       const onSuccess = (decodedText) => {
-        const scannedId = decodedText.trim();
+        const scannedId = extractSealId(decodedText).trim();
         
         const currentType = slot === 1 ? sealInputs[category].type : sealInputs[category].type2;
         let isAlreadyScanned = false;
@@ -2654,17 +2751,23 @@ const ViewDataList = ({
 const ViewScanner = ({ installedSeals, showNotification }) => {
   const [scanResult, setScanResult] = useState(null);
   const [isScanning, setIsScanning] = useState(false);
-  const scannerRef = useRef(null);
   const activeScanRef = useRef(false);
+
+  // Custom Scanner Refs untuk Enterprise Architecture
+  const videoRef = useRef(null);
+  const canvasRef = useRef(null);
+  const streamRef = useRef(null);
+  const animationRef = useRef(null);
 
   // State untuk Tukar Kamera
   const [cameras, setCameras] = useState([]);
   const [currentCamIndex, setCurrentCamIndex] = useState(0);
 
   const processScannedData = (rawText) => { 
+      const scannedId = extractSealId(rawText).trim();
       setScanResult({ 
         raw: rawText, 
-        decoded: { success: true, data: rawText.trim() } 
+        decoded: { success: true, data: scannedId } 
       }); 
   };
 
@@ -2676,101 +2779,109 @@ const ViewScanner = ({ installedSeals, showNotification }) => {
     setIsScanning(true);
     
     try {
-        // 1. Tunggu DOM siap sepenuhnya agar tidak error 'clientWidth'
-        await new Promise(resolve => {
-            let attempts = 0;
-            const check = () => {
-                const el = document.getElementById("reader");
-                if (el && el.clientWidth > 0) resolve();
-                else if (attempts < 50) { attempts++; requestAnimationFrame(check); }
-                else resolve();
-            };
-            check();
-        });
-
+        await new Promise(resolve => setTimeout(resolve, 300));
         if (!activeScanRef.current) return;
 
-        const module = await import('https://esm.sh/html5-qrcode');
-        const Html5Qrcode = module.Html5Qrcode;
-        
-        if (scannerRef.current) {
-          await scannerRef.current.stop().catch(() => {});
-          scannerRef.current.clear();
+        // 1. Ambil Library ZXing (jsQR)
+        const jsQRModule = await import('https://esm.sh/jsqr');
+        const jsQR = jsQRModule.default || jsQRModule;
+
+        if (streamRef.current) {
+            streamRef.current.getTracks().forEach(track => track.stop());
         }
-        
-        const html5QrCode = new Html5Qrcode("reader");
-        scannerRef.current = html5QrCode;
-
-        const onSuccess = (decodedText) => { 
-            if(scannerRef.current) {
-                scannerRef.current.stop().then(() => { 
-                    scannerRef.current = null; 
-                    setIsScanning(false); 
-                    activeScanRef.current = false;
-                    processScannedData(decodedText); 
-                }).catch(console.error); 
-            }
-        };
-        const onError = (errorMessage) => {};
-        
-        // KEMBALI KE PENGATURAN AMAN: Menghapus fitur eksperimental yang memblokir kamera
-        const qrConfig = { 
-            fps: 15, 
-            qrbox: { width: 250, height: 250 }
-        };
-        
-        let started = false;
-
-        // 2. Logika Pemilihan Kamera & Fitur Tukar Kamera
-        try {
-            let targetList = cameras;
-            if (targetList.length === 0) {
-                const fetchedCameras = await Html5Qrcode.getCameras();
-                if (fetchedCameras && fetchedCameras.length > 0) {
-                    const backCams = fetchedCameras.filter(c => {
-                        const lbl = c.label.toLowerCase();
-                        return lbl.includes('back') || lbl.includes('belakang') || lbl.includes('environment');
-                    });
-                    targetList = backCams.length > 0 ? backCams : fetchedCameras;
-                    setCameras(targetList);
-                }
-            }
-
-            let camIndexToUse = 0;
-            if (forcedCamIndex !== null) {
-                camIndexToUse = forcedCamIndex;
-            } else if (targetList.length > 0) {
-                const bestIdx = targetList.findIndex(c => {
-                    const lbl = c.label.toLowerCase();
-                    if (lbl.includes('main') || lbl.includes('1x') || lbl.includes('standard') || lbl.includes('utama')) return true;
-                    return !lbl.includes('ultra') && !lbl.includes('0.5') && !lbl.includes('wide') && !lbl.includes('macro') && !lbl.includes('tele') && !lbl.includes('depth');
-                });
-                camIndexToUse = bestIdx !== -1 ? bestIdx : 0;
-            }
-
-            setCurrentCamIndex(camIndexToUse);
-
-            if (targetList.length > 0 && targetList[camIndexToUse]) {
-                // PERBAIKAN: Paksa kamera yang terpilih untuk menyala dalam resolusi HD (1280p)
-                await html5QrCode.start({ deviceId: { exact: targetList[camIndexToUse].id }, width: { ideal: 1280 } }, qrConfig, onSuccess, onError);
-                started = true;
-            }
-        } catch (camErr) {
-            console.warn("Gagal mengambil daftar spesifik kamera:", camErr);
+        if (animationRef.current) {
+            cancelAnimationFrame(animationRef.current);
         }
-        
-        if (!started && activeScanRef.current) {
+
+        // 2. Logika Cerdas Kamera
+        let targetList = cameras;
+        if (targetList.length === 0) {
             try {
-                await html5QrCode.start({ facingMode: "environment", width: { ideal: 1280 } }, qrConfig, onSuccess, onError);
-                started = true;
-            } catch (err2) {
-                console.warn("Gagal fallback resolusi 1:", err2);
-            }
+                const tempStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+                tempStream.getTracks().forEach(t => t.stop());
+            } catch(e) {}
+
+            const devices = await navigator.mediaDevices.enumerateDevices();
+            const videoDevices = devices.filter(d => d.kind === 'videoinput');
+            const backCams = videoDevices.filter(c => {
+                const lbl = c.label.toLowerCase();
+                return lbl.includes('back') || lbl.includes('belakang') || lbl.includes('environment');
+            });
+            targetList = backCams.length > 0 ? backCams : videoDevices;
+            setCameras(targetList);
         }
 
-        if (!started && activeScanRef.current) {
-            await html5QrCode.start({ facingMode: "environment" }, qrConfig, onSuccess, onError);
+        let camIndexToUse = 0;
+        if (forcedCamIndex !== null) {
+            camIndexToUse = forcedCamIndex;
+        } else if (targetList.length > 0) {
+            const bestIdx = targetList.findIndex(c => {
+                const lbl = c.label.toLowerCase();
+                if (lbl.includes('main') || lbl.includes('1x') || lbl.includes('standard') || lbl.includes('utama')) return true;
+                return !lbl.includes('ultra') && !lbl.includes('0.5') && !lbl.includes('wide') && !lbl.includes('macro') && !lbl.includes('tele') && !lbl.includes('depth');
+            });
+            camIndexToUse = bestIdx !== -1 ? bestIdx : 0;
         }
+
+        setCurrentCamIndex(camIndexToUse);
+
+        const constraints = {
+            video: targetList.length > 0 && targetList[camIndexToUse].deviceId 
+                ? { deviceId: { exact: targetList[camIndexToUse].deviceId } } 
+                : { facingMode: "environment" }
+        };
+
+        // 3. Nyalakan Kamera Mentah
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        streamRef.current = stream;
+
+        if (videoRef.current) {
+            videoRef.current.srcObject = stream;
+            videoRef.current.setAttribute("playsinline", true);
+            videoRef.current.play();
+
+            // 4. Mesin Looping Scanner Custom (ROI + Zoom + Filter GPU)
+            const scanLoop = () => {
+                if (!activeScanRef.current) return;
+                
+                if (videoRef.current && videoRef.current.readyState === videoRef.current.HAVE_ENOUGH_DATA) {
+                    const canvas = canvasRef.current;
+                    if (!canvas) return;
+                    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+                    
+                    canvas.width = 400; 
+                    canvas.height = 400;
+                    
+                    const vw = videoRef.current.videoWidth;
+                    const vh = videoRef.current.videoHeight;
+                    
+                    // ROI & Digital Zoom 1.5x
+                    const size = Math.min(vw, vh);
+                    const zoomFactor = 1.5; 
+                    const cropSize = size / zoomFactor; 
+                    const sx = (vw - cropSize) / 2;
+                    const sy = (vh - cropSize) / 2;
+                    
+                    ctx.filter = 'contrast(1.4) brightness(1.2)';
+                    ctx.drawImage(videoRef.current, sx, sy, cropSize, cropSize, 0, 0, canvas.width, canvas.height);
+                    ctx.filter = 'none';
+
+                    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                    const code = jsQR(imageData.data, imageData.width, imageData.height, {
+                        inversionAttempts: "dontInvert",
+                    });
+
+                    if (code && code.data) {
+                        stopScanner();
+                        processScannedData(code.data);
+                        return;
+                    }
+                }
+                animationRef.current = requestAnimationFrame(scanLoop);
+            };
+            animationRef.current = requestAnimationFrame(scanLoop);
+        }
+
     } catch (err) { 
       if (activeScanRef.current) {
           showNotification("Gagal mengakses kamera. Pastikan izin akses diberikan.", 'error'); 
@@ -2783,22 +2894,15 @@ const ViewScanner = ({ installedSeals, showNotification }) => {
   const switchCamera = async () => {
     if (cameras.length <= 1) return;
     const nextIdx = (currentCamIndex + 1) % cameras.length;
-    
-    if (scannerRef.current) {
-        await scannerRef.current.stop().catch(() => {});
-        scannerRef.current.clear();
-        scannerRef.current = null;
-    }
-    activeScanRef.current = false;
     startScanner(nextIdx);
   };
 
-  const stopScanner = async () => {
+  const stopScanner = () => {
     activeScanRef.current = false;
-    if (scannerRef.current) { 
-        await scannerRef.current.stop().catch(() => {}); 
-        scannerRef.current.clear(); 
-        scannerRef.current = null; 
+    if (animationRef.current) cancelAnimationFrame(animationRef.current);
+    if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+        streamRef.current = null;
     }
     setIsScanning(false);
   };
@@ -2809,9 +2913,7 @@ const ViewScanner = ({ installedSeals, showNotification }) => {
     startScanner();
     return () => {
       isMounted = false;
-      if (scannerRef.current) { 
-        scannerRef.current.stop().catch(() => {}); 
-      }
+      stopScanner();
     };
   }, []);
 
@@ -2845,10 +2947,17 @@ const ViewScanner = ({ installedSeals, showNotification }) => {
            </div>
            <div className="flex-1 flex flex-col justify-center items-center bg-black relative p-4">
                <div className="absolute inset-0 border-4 border-[#146b99] opacity-20 pointer-events-none m-4 rounded-3xl"></div>
-               <div 
-                 id="reader" 
-                 className="w-full max-w-md aspect-square bg-gray-900 rounded-2xl overflow-hidden shadow-[0_0_50px_rgba(0,0,0,0.5)]"
-               ></div>
+               
+               {/* UI SCANNER ENTERPRISE CUSTOM */}
+               <div className="w-full max-w-md aspect-square bg-gray-900 rounded-2xl overflow-hidden shadow-[0_0_50px_rgba(0,0,0,0.5)] relative">
+                  <video ref={videoRef} className="hidden" playsInline muted />
+                  <canvas ref={canvasRef} className="w-full h-full object-cover scale-[1.02]" />
+                  
+                  {/* Panduan Area Scan */}
+                  <div className="absolute inset-0 border-2 border-[#146b99]/40 m-10 rounded-xl pointer-events-none"></div>
+                  <div className="absolute top-1/2 left-10 right-10 h-0.5 bg-[#146b99] shadow-[0_0_10px_rgba(20,107,153,0.8)] pointer-events-none" style={{animation: 'scan-animation 2s ease-in-out infinite'}}></div>
+               </div>
+               
                <p className="text-white text-sm font-semibold mt-8 animate-pulse text-center">Sedang memindai...</p>
 
                {cameras.length > 1 && (
@@ -3042,6 +3151,17 @@ const App = () => {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUser, dbClient]);
+
+  // JIKA ADA PARAMETER VERIFY (PUBLIC SCAN VIA KAMERA HP ASLI)
+  const urlParams = new URLSearchParams(window.location.search);
+  const verifyId = urlParams.get('verify');
+
+  if (verifyId) {
+      if (!dbClient) {
+          return <div className="flex h-screen items-center justify-center bg-[#f8f9fa]"><Loader2 className="animate-spin text-[#146b99]" size={48} /></div>;
+      }
+      return <PublicVerification sealId={verifyId} dbClient={dbClient} />;
+  }
 
   // JIKA BELUM LOGIN
   if (!currentUser) {
