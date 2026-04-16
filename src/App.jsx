@@ -487,9 +487,9 @@ const ViewQRGenerator = ({
   setPrintConfig,
   showNotification
 }) => {
-  const [inputPrefix, setInputPrefix] = useState('EPN-');
+  const [inputPrefix, setInputPrefix] = useState('EPN-RTC-');
   const [startNum, setStartNum] = useState(1);
-  const [count, setCount] = useState(1);
+  const [count, setCount] = useState(306);
   const [copiesPerId, setCopiesPerId] = useState(1);
   
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false); 
