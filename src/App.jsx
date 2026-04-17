@@ -963,7 +963,7 @@ const ViewQRGenerator = ({
     document.addEventListener('mousemove', onMove); 
     document.addEventListener('mouseup', onUp);
     document.addEventListener('touchmove', onMove, { passive: false }); 
-    document.addEventListener('touchend', onUp);
+    document.addEventListener('touchmove', onUp);
   };
 
   // TEKS ID DRAG & RESIZE
@@ -1973,8 +1973,8 @@ const ViewInputData = ({
 
       const constraints = {
           video: targetList.length > 0 && targetList[camIndexToUse].deviceId 
-              ? { deviceId: { exact: targetList[camIndexToUse].deviceId }, width: { ideal: 1280 } } 
-              : { facingMode: "environment", width: { ideal: 1280 } }
+              ? { deviceId: { exact: targetList[camIndexToUse].deviceId }, width: { ideal: 1280 }, advanced: [{ focusMode: "continuous" }] } 
+              : { facingMode: "environment", width: { ideal: 1280 }, advanced: [{ focusMode: "continuous" }] }
       };
 
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
@@ -1993,25 +1993,27 @@ const ViewInputData = ({
                   if (!canvas) return;
                   const ctx = canvas.getContext("2d", { willReadFrequently: true });
                   
-                  canvas.width = 400; 
-                  canvas.height = 400;
-                  
                   const vw = videoRef.current.videoWidth;
                   const vh = videoRef.current.videoHeight;
                   
                   const size = Math.min(vw, vh);
-                  const zoomFactor = 1.5; 
+                  const zoomFactor = 2.5; 
                   const cropSize = size / zoomFactor; 
                   const sx = (vw - cropSize) / 2;
                   const sy = (vh - cropSize) / 2;
                   
-                  ctx.filter = 'contrast(1.4) brightness(1.2)';
-                  ctx.drawImage(videoRef.current, sx, sy, cropSize, cropSize, 0, 0, canvas.width, canvas.height);
+                  // OPTIMASI 1: Canvas dinamis mengikuti ukuran asli (Mencegah blur)
+                  canvas.width = cropSize; 
+                  canvas.height = cropSize;
+                  
+                  // OPTIMASI 2: Matikan filter agresif yang membuat silau
                   ctx.filter = 'none';
+                  ctx.drawImage(videoRef.current, sx, sy, cropSize, cropSize, 0, 0, cropSize, cropSize);
 
-                  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                  const imageData = ctx.getImageData(0, 0, cropSize, cropSize);
                   const code = jsQR(imageData.data, imageData.width, imageData.height, {
-                      inversionAttempts: "dontInvert",
+                      // OPTIMASI 3: attemptBoth agar bisa membaca QR dalam berbagai kondisi cahaya/inversi
+                      inversionAttempts: "attemptBoth",
                   });
 
                   if (code && code.data) {
@@ -2501,8 +2503,8 @@ const ViewInputData = ({
                   <canvas ref={canvasRef} className="w-full h-full object-cover scale-[1.02]" />
                   
                   {/* Panduan Area Scan */}
-                  <div className="absolute inset-0 border-2 border-blue-500/40 m-10 rounded-xl pointer-events-none"></div>
-                  <div className="absolute top-1/2 left-10 right-10 h-0.5 bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.8)] pointer-events-none" style={{animation: 'scan-animation 2s ease-in-out infinite'}}></div>
+                  <div className="absolute inset-0 border-2 border-blue-500/40 m-24 rounded-xl pointer-events-none"></div>
+                  <div className="absolute top-1/2 left-24 right-24 h-0.5 bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.8)] pointer-events-none" style={{animation: 'scan-animation 2s ease-in-out infinite'}}></div>
                </div>
 
                <p className="text-white text-sm font-semibold mt-8 animate-pulse text-center">Sedang memindai...</p>
@@ -2597,7 +2599,7 @@ const ViewInputData = ({
 };
 
 // ============================================================================
-// KOMPONEN HALAMAN: VIEW DATA LIST
+// KOMPONEN HAL halaman: VIEW DATA LIST
 // ============================================================================
 const ViewDataList = ({ 
   dbClient,
@@ -2872,8 +2874,8 @@ const ViewScanner = ({ installedSeals, showNotification }) => {
 
         const constraints = {
             video: targetList.length > 0 && targetList[camIndexToUse].deviceId 
-                ? { deviceId: { exact: targetList[camIndexToUse].deviceId } } 
-                : { facingMode: "environment" }
+                ? { deviceId: { exact: targetList[camIndexToUse].deviceId }, width: { ideal: 1280 }, advanced: [{ focusMode: "continuous" }] } 
+                : { facingMode: "environment", width: { ideal: 1280 }, advanced: [{ focusMode: "continuous" }] }
         };
 
         // 3. Nyalakan Kamera Mentah
@@ -2894,26 +2896,28 @@ const ViewScanner = ({ installedSeals, showNotification }) => {
                     if (!canvas) return;
                     const ctx = canvas.getContext("2d", { willReadFrequently: true });
                     
-                    canvas.width = 400; 
-                    canvas.height = 400;
-                    
                     const vw = videoRef.current.videoWidth;
                     const vh = videoRef.current.videoHeight;
                     
-                    // ROI & Digital Zoom 1.5x
+                    // ROI & Digital Zoom 2.5x untuk Stiker 1x1 cm
                     const size = Math.min(vw, vh);
-                    const zoomFactor = 1.5; 
+                    const zoomFactor = 2.5; 
                     const cropSize = size / zoomFactor; 
                     const sx = (vw - cropSize) / 2;
                     const sy = (vh - cropSize) / 2;
                     
-                    ctx.filter = 'contrast(1.4) brightness(1.2)';
-                    ctx.drawImage(videoRef.current, sx, sy, cropSize, cropSize, 0, 0, canvas.width, canvas.height);
+                    // OPTIMASI 1: Canvas dinamis mengikuti ukuran asli (Mencegah blur)
+                    canvas.width = cropSize; 
+                    canvas.height = cropSize;
+                    
+                    // OPTIMASI 2: Matikan filter agresif yang membuat silau
                     ctx.filter = 'none';
+                    ctx.drawImage(videoRef.current, sx, sy, cropSize, cropSize, 0, 0, cropSize, cropSize);
 
-                    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                    const imageData = ctx.getImageData(0, 0, cropSize, cropSize);
                     const code = jsQR(imageData.data, imageData.width, imageData.height, {
-                        inversionAttempts: "dontInvert",
+                        // OPTIMASI 3: attemptBoth agar bisa membaca QR dalam berbagai kondisi cahaya/inversi
+                        inversionAttempts: "attemptBoth",
                     });
 
                     if (code && code.data) {
@@ -3008,9 +3012,9 @@ const ViewScanner = ({ installedSeals, showNotification }) => {
                   <video ref={videoRef} className="hidden" playsInline muted />
                   <canvas ref={canvasRef} className="w-full h-full object-cover scale-[1.02]" />
                   
-                  {/* Panduan Area Scan */}
-                  <div className="absolute inset-0 border-2 border-[#146b99]/40 m-10 rounded-xl pointer-events-none"></div>
-                  <div className="absolute top-1/2 left-10 right-10 h-0.5 bg-[#146b99] shadow-[0_0_10px_rgba(20,107,153,0.8)] pointer-events-none" style={{animation: 'scan-animation 2s ease-in-out infinite'}}></div>
+                  {/* Panduan Area Scan yang diperkecil untuk menyesuaikan zoom 2.5x */}
+                  <div className="absolute inset-0 border-2 border-[#146b99]/40 m-24 rounded-xl pointer-events-none"></div>
+                  <div className="absolute top-1/2 left-24 right-24 h-0.5 bg-[#146b99] shadow-[0_0_10px_rgba(20,107,153,0.8)] pointer-events-none" style={{animation: 'scan-animation 2s ease-in-out infinite'}}></div>
                </div>
                
                <p className="text-white text-sm font-semibold mt-8 animate-pulse text-center">Sedang memindai...</p>
@@ -3390,12 +3394,16 @@ const App = () => {
                 <img 
                   // ⬇️ SILAKAN GANTI ISI SRC DI BAWAH INI DENGAN PATH LOKAL ATAU URL GAMBAR ANDA
                   // Contoh lokal: "/under-construction.png" (pastikan file ada di folder public proyek Anda)
-                  src="under_construction.jpg" 
+                  src="/under-construction.png" 
                   alt="Under Construction Tools" 
-                  className="w-300 h-140 object-contain mb-8 drop-shadow-xl hover:scale-105 transition-transform opacity-90" 
+                  className="w-48 h-48 object-contain mb-8 drop-shadow-xl hover:scale-105 transition-transform opacity-90" 
                   // Jika gambar belum Anda tambahkan ke folder, gambar otomatis disembunyikan agar UI tidak rusak
                   onError={(e) => { e.target.style.display = 'none'; }}
                 />
+                <h2 className="text-3xl font-black text-slate-800 mb-3 text-center tracking-tight">Tahap Pengembangan</h2>
+                <p className="text-slate-500 font-medium text-center max-w-md leading-relaxed">
+                  Fitur <b className="text-[#146b99]">{activeMenu === 'pelaporan-segel' ? 'Pelaporan Segel' : 'Daftar Pelaporan'}</b> sedang dibangun untuk memberikan pengalaman analitik terbaik. Silakan nantikan pembaruan berikutnya!
+                </p>
               </div>
             )}
             
