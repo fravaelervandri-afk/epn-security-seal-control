@@ -3419,7 +3419,7 @@ const App = () => {
                 <img 
                   // ⬇️ SILAKAN GANTI ISI SRC DI BAWAH INI DENGAN PATH LOKAL ATAU URL GAMBAR ANDA
                   // Contoh lokal: "/under-construction.png" (pastikan file ada di folder public proyek Anda)
-                  src="/under-construction.png" 
+                  src="under_construction.png" 
                   alt="Under Construction Tools" 
                   className="w-48 h-48 object-contain mb-8 drop-shadow-xl hover:scale-105 transition-transform opacity-90" 
                   // Jika gambar belum Anda tambahkan ke folder, gambar otomatis disembunyikan agar UI tidak rusak
