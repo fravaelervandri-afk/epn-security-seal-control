@@ -2036,6 +2036,13 @@ const ViewInputData = ({
   };
 
   const handleSuccessfulScan = (scannedId, category, slot) => {
+      // VALIDASI KETAT: Tolak jika ID tidak ada di Master Data Produksi
+      if (!uniqueGeneratedIds.includes(scannedId)) {
+         showNotification(`INVALID: ID '${scannedId}' palsu atau tidak terdaftar di Master Data!`, 'error');
+         stopInputScanner();
+         return;
+      }
+
       const currentType = slot === 1 ? sealInputs[category].type : sealInputs[category].type2;
       let isAlreadyScanned = false;
       
@@ -2795,7 +2802,7 @@ const ViewDataList = ({
 // ============================================================================
 // KOMPONEN HALAMAN: VIEW SCANNER VERIFIKASI UTAMA
 // ============================================================================
-const ViewScanner = ({ installedSeals, showNotification }) => {
+const ViewScanner = ({ installedSeals, generateHistory, showNotification }) => {
   const [scanResult, setScanResult] = useState(null);
   const [isScanning, setIsScanning] = useState(false);
   const activeScanRef = useRef(false);
@@ -2812,6 +2819,23 @@ const ViewScanner = ({ installedSeals, showNotification }) => {
 
   const processScannedData = (rawText) => { 
       const scannedId = extractSealId(rawText).trim();
+
+      // VALIDASI KETAT: Periksa apakah ID pernah di-generate di Master Data
+      const isValidGeneratedId = generateHistory.some(batch => 
+         batch.items && batch.items.some(item => item.id === scannedId)
+      );
+
+      if (!isValidGeneratedId) {
+          setScanResult({ 
+            raw: rawText, 
+            decoded: { 
+              success: false, 
+              error: "INVALID: ID Segel palsu atau tidak terdaftar di Master Data produksi." 
+            } 
+          }); 
+          return;
+      }
+
       setScanResult({ 
         raw: rawText, 
         decoded: { success: true, data: scannedId } 
@@ -3382,6 +3406,7 @@ const App = () => {
             {activeMenu === 'scan' && (
               <ViewScanner 
                 installedSeals={installedSeals}
+                generateHistory={generateHistory}
                 showNotification={showNotification}
               />
             )}
