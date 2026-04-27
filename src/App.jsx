@@ -594,7 +594,6 @@ const ViewQRGenerator = ({
   const activeBatch = previewBatchId ? generateHistory.find(b => b.id === previewBatchId) : null;
   const activeBatchUniqueIds = activeBatch ? [...new Set((activeBatch.items || []).map(item => item?.id).filter(Boolean))] : [];
   
-  // Auto-hitung nomor selanjutnya berdasarkan histori agar Anda tidak perlu mengetik manual
   useEffect(() => {
     if (!previewBatchId) {
       const samePrefixBatches = generateHistory.filter(b => b.prefix === inputPrefix);
@@ -718,7 +717,6 @@ const ViewQRGenerator = ({
          setSelectedBatchIds([...new Set(generatedQRs.map(item => item.id))]);
       }
 
-      // Helper Fungsi Pembuat QR dengan API Online untuk PDF
       const generateQROnCanvas = async (text, payload, size, showText) => {
           return new Promise((resolve, reject) => {
               const img = new Image();
@@ -766,7 +764,6 @@ const ViewQRGenerator = ({
       const templateContainer = document.getElementById('master-template-container');
       const previewWidthPx = templateContainer ? templateContainer.getBoundingClientRect().width : 800;
 
-      // --- TAMBAHAN OPTIMASI PDF: PRE-FETCH & CACHING ---
       const uniqueIds = [...new Set(generatedQRs.map(item => item.id))];
       const qrImageCache = {};
 
@@ -775,14 +772,14 @@ const ViewQRGenerator = ({
         const batch = uniqueIds.slice(b, b + batchLimit);
         await Promise.all(batch.map(async (id) => {
            try {
-              const dataUrl = await generateQROnCanvas(id, `${window.location.origin}/?verify=${id}`, 300, printConfig.embedQrText);
+              // PERUBAHAN DISINI: Payload hanya berisi ID, bukan URL
+              const dataUrl = await generateQROnCanvas(id, id, 300, printConfig.embedQrText);
               qrImageCache[id] = dataUrl;
            } catch (e) {
               console.error(`Gagal fetch QR untuk ${id}`, e);
            }
         }));
       }
-      // --- END OPTIMASI PDF ---
 
       for (let i = 0; i < generatedQRs.length; i++) {
         if (i > 0 && i % itemsPerPage === 0 && i !== 0) {
@@ -890,7 +887,6 @@ const ViewQRGenerator = ({
       setGeneratedQRs([]); 
   };
 
-  // MULTI-QR DRAG & RESIZE
   const handleDragStart = (e, index) => {
     e.preventDefault(); 
     const container = document.getElementById('master-template-container');
@@ -966,7 +962,6 @@ const ViewQRGenerator = ({
     document.addEventListener('touchmove', onUp);
   };
 
-  // TEKS ID DRAG & RESIZE
   const handleTextDragStart = (e, index) => {
     e.preventDefault(); 
     const container = document.getElementById('master-template-container');
@@ -1063,7 +1058,6 @@ const ViewQRGenerator = ({
     <div className="animate-in fade-in duration-300">
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         
-        {/* PANEL KIRI (PENGATURAN) */}
         <div className="lg:col-span-4 space-y-5">
           
           <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200/60">
@@ -1380,7 +1374,6 @@ const ViewQRGenerator = ({
           </div>
         </div>
 
-        {/* PANEL KANAN (PREVIEW & AREA CETAK) */}
         <div className="lg:col-span-8 flex flex-col gap-6">
           
           {previewBatchId && (
@@ -1395,7 +1388,6 @@ const ViewQRGenerator = ({
             </div>
           )}
 
-          {/* MASTER TEMPLATE MULTI-QR */}
           {templateImg && (
             <div className="bg-white p-4 md:p-6 rounded-2xl shadow-sm border border-slate-200/60 overflow-hidden">
               <div className="flex justify-between items-center mb-2 border-b border-slate-100 pb-3">
@@ -1438,7 +1430,8 @@ const ViewQRGenerator = ({
                   >
                      <CustomQRCodeWithID 
                        displayValue={`${inputPrefix}XXXXX`} 
-                       qrPayload={`${window.location.origin}/?verify=${inputPrefix}XXXXX`} 
+                       // PERUBAHAN DISINI: Payload preview statis
+                       qrPayload={`${inputPrefix}XXXXX`} 
                        size={300} 
                        showText={printConfig.embedQrText} 
                      />
@@ -1530,7 +1523,6 @@ const ViewQRGenerator = ({
             </div>
           )}
 
-          {/* AREA CETAK (PRINT CONTAINER) */}
           <div className="bg-white p-4 md:p-6 rounded-2xl shadow-sm border border-slate-200/60 flex-1">
             <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-6 gap-3">
               <div>
@@ -1591,7 +1583,8 @@ const ViewQRGenerator = ({
                          >
                             <CustomQRCodeWithID 
                               displayValue={item.id} 
-                              qrPayload={`${window.location.origin}/?verify=${item.id}`} 
+                              // PERUBAHAN DISINI: Payload preview dinamis berisi ID murni
+                              qrPayload={item.id} 
                               size={250} 
                               showText={printConfig.embedQrText} 
                             />
@@ -1622,7 +1615,6 @@ const ViewQRGenerator = ({
     </div>
   );
 };
-
 // ============================================================================
 // KOMPONEN HALAMAN: VIEW HISTORI GENERATOR
 // ============================================================================
